@@ -1,6 +1,7 @@
 import asyncio
 import json
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Optional
 from uuid import UUID
 
@@ -13,17 +14,12 @@ from config import settings
 from core.database import get_db_context
 from core.neo4j_client import neo4j_client
 from models.audit_log import AuditLog
+from models.consent import ConsentRecord
 from models.finding import Endpoint, Finding
 from models.scan import Scan
 from scanner.chain_builder import ChainBuilder
 from scanner.crawler import Crawler
-from scanner.hardcore.db_verifier import DBVerifier
-from scanner.hardcore.jwt_attacker import JWTAttacker
-from scanner.hardcore.nuclei_runner import NucleiRunner
-from scanner.hardcore.rate_limit_tester import RateLimitTester
-from scanner.hardcore.session_tester import SessionTester
-from scanner.hardcore.sqlmap_client import SQLMapClient
-from scanner.hardcore.user_enumeration import UserEnumerationTester
+from scanner.hardcore.hardcore_runner import HardcoreRunner
 from scanner.llm_analyzer import LLMAnalyzer
 from scanner.poc_generator import PoCGenerator
 from scanner.report_engine import ReportEngine
@@ -249,12 +245,30 @@ async def _run_pipeline_async(task, scan_id: str) -> dict:
         findings_data = list(await rule_engine.run_all_probes())
 
         if mode == "hardcore":
-            hardcore_findings = await run_hardcore_modules(
+            consent_record: ConsentRecord | SimpleNamespace | None = None
+            async with get_db_context() as db:
+                consent_result = await db.execute(
+                    select(ConsentRecord).where(ConsentRecord.scan_id == scan_uuid)
+                )
+                consent_record = consent_result.scalar_one_or_none()
+
+            if consent_record is None:
+                consent_record = SimpleNamespace(
+                    id=consent_scope.get("id", "runtime-consent") if isinstance(consent_scope, dict) else "runtime-consent",
+                    target_domain=consent_scope.get("target_domain", "") if isinstance(consent_scope, dict) else "",
+                    domain_verified=bool(consent_scope.get("domain_verified", False)) if isinstance(consent_scope, dict) else False,
+                    scope_locked=bool(consent_scope.get("scope_locked", False)) if isinstance(consent_scope, dict) else False,
+                    scope_config=consent_scope if isinstance(consent_scope, dict) else {},
+                )
+
+            hardcore_runner = HardcoreRunner(
                 scan_id=scan_id,
                 endpoints=endpoints_data,
                 scan_config=scan_config,
-                consent_scope=consent_scope,
+                consent_scope=consent_record,
+                session_cookies=getattr(crawler, "session_cookies", {}) or {},
             )
+            hardcore_findings = await hardcore_runner.run()
             findings_data.extend(hardcore_findings)
 
         finding_rows = [
@@ -475,64 +489,6 @@ async def _run_pipeline_async(task, scan_id: str) -> dict:
         await neo4j_client.disconnect()
 
 
-async def run_hardcore_modules(
-    scan_id: str,
-    endpoints: list,
-    scan_config: dict,
-    consent_scope: dict,
-) -> list:
-    combined_findings: list = []
-
-    allowed_paths = consent_scope.get("allowed_paths", ["/"]) if isinstance(consent_scope, dict) else ["/"]
-
-    def in_scope(url: str) -> bool:
-        if not allowed_paths:
-            return True
-        return any(url.startswith(path) for path in allowed_paths)
-
-    scoped_endpoints = [ep for ep in endpoints if in_scope(str(_value(ep, "url", "")))]
-
-    module_specs = [
-        ("sqlmap_client", SQLMapClient),
-        ("nuclei_runner", NucleiRunner),
-        ("rate_limit_tester", RateLimitTester),
-        ("user_enumeration", UserEnumerationTester),
-        ("jwt_attacker", JWTAttacker),
-        ("session_tester", SessionTester),
-        ("db_verifier", DBVerifier),
-    ]
-
-    for module_name, module_cls in module_specs:
-        try:
-            module_instance = module_cls(scan_id=scan_id, config=scan_config)
-            module_results = await module_instance.run(
-                endpoints=scoped_endpoints,
-                consent_scope=consent_scope,
-            )
-            if module_results:
-                combined_findings.extend(module_results)
-
-            for audit in getattr(module_instance, "audit_entries", []):
-                await log_audit_entry(
-                    scan_id=scan_id,
-                    module=module_name,
-                    request_method=_value(audit, "request_method"),
-                    request_url=_value(audit, "request_url"),
-                    response_code=_value(audit, "response_code"),
-                    notes=json.dumps(_as_dict(audit)),
-                )
-        except Exception as exc:
-            logger.warning(
-                "Hardcore module failed | scan=%s | module=%s | error=%s",
-                scan_id,
-                module_name,
-                exc,
-            )
-            continue
-
-    return combined_findings
-
-
 @celery_app.task(name="tasks.scan_tasks.cleanup_stale_scans")
 def cleanup_stale_scans() -> dict:
     async def _cleanup_async() -> dict:
@@ -564,3 +520,42 @@ def cleanup_stale_scans() -> dict:
         return {"cleaned_up": cleaned_count}
 
     return asyncio.run(_cleanup_async())
+
+
+@celery_app.task(name="tasks.scan_tasks.regenerate_report_task")
+def regenerate_report_task(scan_id: str) -> dict:
+    async def _regenerate_async() -> dict:
+        scan_uuid = UUID(scan_id)
+
+        async with get_db_context() as db:
+            scan = await db.get(Scan, scan_uuid)
+            if scan is None:
+                raise ValueError(f"Scan not found: {scan_id}")
+            if str(scan.status) != "completed":
+                raise ValueError("Report regeneration is only available for completed scans")
+
+        chain_rows = await ChainBuilder.get_ranked_chains(scan_id)
+        chain_objects = [SimpleNamespace(**row) if isinstance(row, dict) else row for row in chain_rows]
+
+        report_engine = ReportEngine(scan_id=scan_id)
+        report = await report_engine.generate(
+            findings=[],
+            chains=chain_objects,
+            executive_summary=None,
+        )
+
+        await publish_scan_event(
+            scan_id,
+            "report.regenerated",
+            {
+                "report_id": str(_value(report, "id", "")),
+            },
+        )
+
+        return {
+            "status": "completed",
+            "scan_id": scan_id,
+            "report_id": str(_value(report, "id", "")),
+        }
+
+    return asyncio.run(_regenerate_async())

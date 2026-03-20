@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual envs
+.venv/
+venv/
+Backend/.venv/
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+npm-debug.log*
+yarn-error.log*
+
+# Local env files
+.env
+.env.local
+.env.*.local
+frontend/.env
+Backend/.env
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Runtime data and logs
+data/logs/
+data/reports/
+Backend/data/logs/
+Backend/data/reports/
+*.log
+
+# Build artifacts
+dist/
+build/
+*.tsbuildinfo
+
+# Docker volumes / temporary files
+postgres_data/
+redis_data/
+neo4j_data/
+neo4j_logs/

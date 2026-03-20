@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import auth, health, llm_config, scan, settings_route, websocket
+from api.routes import auth, consent, graph, health, llm_config, reports, scan, settings_route, websocket
 from config import settings
 from core.database import init_db
 from core.neo4j_client import neo4j_client
@@ -72,6 +72,9 @@ app.include_router(websocket.router, prefix="/ws", tags=["WebSocket"])
 app.include_router(health.router, prefix="/", tags=["Health"])
 app.include_router(settings_route.router, prefix="/api", tags=["Settings"])
 app.include_router(llm_config.router, prefix="/api")
+app.include_router(graph.router, prefix="/api", tags=["Graph"])
+app.include_router(reports.router, prefix="/api", tags=["Reports"])
+app.include_router(consent.router, prefix="/api", tags=["Consent"])
 
 
 @app.get("/")

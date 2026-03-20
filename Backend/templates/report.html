@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ASRE Security Report</title>
+  <style>
+    :root {
+      --critical: #7F1D1D;
+      --high: #EF4444;
+      --medium: #F97316;
+      --low: #EAB308;
+      --info: #6B7280;
+      --bg: #0F172A;
+      --text: #1E293B;
+      --subtle: #94A3B8;
+      --surface: #F8FAFC;
+    }
+
+    @page {
+      size: A4;
+      margin: 20mm 15mm 20mm 15mm;
+
+      @bottom-right {
+        content: "Page " counter(page) " of " counter(pages);
+        font-size: 9px;
+        color: #94A3B8;
+      }
+
+      @bottom-left {
+        content: "ASRE Security Report - CONFIDENTIAL";
+        font-size: 9px;
+        color: #94A3B8;
+      }
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 12px;
+      line-height: 1.45;
+      background: #fff;
+    }
+
+    .cover {
+      page-break-after: always;
+      min-height: 260mm;
+      margin: -20mm -15mm;
+      padding: 28mm 20mm;
+      color: #fff;
+      background: var(--bg);
+    }
+
+    .cover h1 {
+      margin: 0;
+      font-size: 54px;
+      letter-spacing: 1px;
+      font-weight: 800;
+    }
+
+    .cover .sub {
+      font-size: 18px;
+      color: #CBD5E1;
+      margin-top: 8px;
+      margin-bottom: 24px;
+    }
+
+    .divider {
+      height: 1px;
+      background: rgba(255, 255, 255, 0.35);
+      margin: 12px 0;
+    }
+
+    .target {
+      font-size: 20px;
+      font-weight: 700;
+      margin: 12px 0;
+      word-break: break-all;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 24px;
+      margin-top: 20px;
+      font-size: 13px;
+      color: #E2E8F0;
+    }
+
+    .risk-badge {
+      margin: 28px auto 0;
+      width: fit-content;
+      padding: 14px 26px;
+      border-radius: 999px;
+      color: #fff;
+      font-size: 24px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .risk-badge.critical { background: var(--critical); }
+    .risk-badge.high { background: var(--high); }
+    .risk-badge.medium { background: var(--medium); }
+    .risk-badge.low { background: var(--low); color: #111827; }
+    .risk-badge.info { background: var(--info); }
+
+    .confidential {
+      position: absolute;
+      bottom: 22mm;
+      left: 20mm;
+      font-size: 11px;
+      color: #94A3B8;
+    }
+
+    .section {
+      page-break-before: always;
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: 24px;
+      font-weight: 800;
+      color: #0F172A;
+    }
+
+    .summary-headline {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 8px 0 10px;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+
+    .actions {
+      border-left: 4px solid var(--high);
+    }
+
+    .chip-wrap {
+      margin-top: 10px;
+    }
+
+    .chip {
+      display: inline-block;
+      background: #EEF2FF;
+      color: #334155;
+      border: 1px solid #CBD5E1;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 10px;
+      margin: 3px 4px 0 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th, td {
+      border: 1px solid #E2E8F0;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .sev-cell {
+      text-align: center;
+      font-weight: 700;
+      font-size: 18px;
+    }
+
+    .bg-critical { background: rgba(127, 29, 29, 0.12); color: var(--critical); }
+    .bg-high { background: rgba(239, 68, 68, 0.12); color: var(--high); }
+    .bg-medium { background: rgba(249, 115, 22, 0.12); color: var(--medium); }
+    .bg-low { background: rgba(234, 179, 8, 0.18); color: #92400E; }
+    .bg-info { background: rgba(107, 114, 128, 0.14); color: var(--info); }
+
+    .finding-section-title {
+      margin: 0 0 12px;
+      font-size: 18px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .finding-card {
+      border: 1px solid #E2E8F0;
+      border-left: 4px solid #6B7280;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin: 0 0 12px;
+      page-break-inside: avoid;
+      background: #fff;
+    }
+
+    .finding-card.critical { border-left-color: var(--critical); }
+    .finding-card.high { border-left-color: var(--high); }
+    .finding-card.medium { border-left-color: var(--medium); }
+    .finding-card.low { border-left-color: var(--low); }
+    .finding-card.info { border-left-color: var(--info); }
+
+    .badges {
+      margin-bottom: 8px;
+      font-size: 10px;
+      color: #475569;
+    }
+
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-weight: 700;
+      margin-right: 6px;
+      border: 1px solid #CBD5E1;
+      background: #F8FAFC;
+    }
+
+    .label {
+      font-weight: 700;
+      margin-top: 6px;
+      color: #0F172A;
+    }
+
+    .mono {
+      font-family: "Courier New", monospace;
+      font-size: 10px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 6px;
+      padding: 8px;
+      margin-top: 4px;
+    }
+
+    .chain-card {
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      page-break-inside: avoid;
+    }
+
+    .small {
+      color: #64748B;
+      font-size: 10px;
+    }
+
+    ol {
+      margin: 6px 0 0 20px;
+      padding: 0;
+    }
+
+    .low-info-table {
+      margin-top: 10px;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <h1>ASRE</h1>
+    <div class="sub">Automated Security Reasoning Engine</div>
+    <div class="divider"></div>
+    <div style="font-size: 28px; font-weight: 700; margin: 6px 0 0;">Security Assessment Report</div>
+    <div class="target">{{ target_url }}</div>
+    <div class="divider"></div>
+
+    <div class="meta-grid">
+      <div><strong>Scan Mode:</strong> {{ scan_mode }}</div>
+      <div><strong>Generated:</strong> {{ generated_at | format_timestamp }}</div>
+      <div><strong>Scan ID:</strong> {{ scan_id }}</div>
+      <div><strong>Duration:</strong> {{ duration_sec | round(2) }}s</div>
+    </div>
+
+    <div class="risk-badge {{ executive_summary.overall_risk_rating }}">
+      {{ executive_summary.overall_risk_rating | upper }}
+    </div>
+
+    <div class="confidential">This report is confidential. Authorized security audit only.</div>
+  </section>
+
+  <section class="section">
+    <h2>Executive Summary</h2>
+    <div class="summary-headline">{{ executive_summary.headline }}</div>
+    <div>{{ executive_summary.summary }}</div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="label">Top Risks</div>
+        <ol>
+          {% for risk in executive_summary.top_risks %}
+          <li>{{ risk }}</li>
+          {% endfor %}
+        </ol>
+      </div>
+      <div class="card actions">
+        <div class="label">Immediate Actions</div>
+        <ol>
+          {% for action in executive_summary.immediate_actions %}
+          <li>{{ action }}</li>
+          {% endfor %}
+        </ol>
+      </div>
+    </div>
+
+    {% if executive_summary.compliance_flags %}
+    <div class="chip-wrap">
+      {% for flag in executive_summary.compliance_flags %}
+      <span class="chip">{{ flag }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="section">
+    <h2>Risk Statistics</h2>
+    <table>
+      <tr>
+        <th>Critical</th>
+        <th>High</th>
+        <th>Medium</th>
+        <th>Low</th>
+        <th>Info</th>
+      </tr>
+      <tr>
+        <td class="sev-cell bg-critical">{{ stats.critical }}</td>
+        <td class="sev-cell bg-high">{{ stats.high }}</td>
+        <td class="sev-cell bg-medium">{{ stats.medium }}</td>
+        <td class="sev-cell bg-low">{{ stats.low }}</td>
+        <td class="sev-cell bg-info">{{ stats.info }}</td>
+      </tr>
+    </table>
+
+    <table>
+      <tr>
+        <th>Endpoints Crawled</th>
+        <th>Attack Chains</th>
+        <th>Scan Duration (s)</th>
+      </tr>
+      <tr>
+        <td>{{ stats.endpoints_found }}</td>
+        <td>{{ stats.chains }}</td>
+        <td>{{ duration_sec | round(2) }}</td>
+      </tr>
+    </table>
+
+    <h3>OWASP Category Breakdown</h3>
+    <table>
+      <tr><th>Category</th><th>Count</th></tr>
+      {% for row in owasp_breakdown %}
+      <tr>
+        <td>{{ row.category }}</td>
+        <td>{{ row.count }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </section>
+
+  <section class="section">
+    <h2>Attack Chains ({{ stats.chains }})</h2>
+    {% for chain in chains %}
+    <div class="chain-card">
+      <div><strong>{{ chain.entry_point }}</strong> -> <strong>{{ chain.final_impact }}</strong></div>
+      <div class="small">Severity Score: {{ chain.severity_score }}/10 | Length: {{ chain.length }} hops</div>
+      <div class="label">Narrative</div>
+      <div>{{ chain.llm_analysis or "Analysis pending" }}</div>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="section">
+    <h2 class="finding-section-title">Critical Findings ({{ findings_by_severity.critical | length }})</h2>
+    {% for finding in findings_by_severity.critical %}
+    <div class="finding-card critical">
+      <div class="badges">
+        <span class="badge">{{ finding.severity | upper }}</span>
+        <span class="badge">{{ finding.vuln_type }}</span>
+        <span class="badge">{{ finding.owasp_category }}</span>
+        <span class="badge">{{ finding.mitre_id }}</span>
+      </div>
+      <div><strong>Title:</strong> {{ finding.title }}</div>
+      <div><strong>URL:</strong> {{ finding.endpoint_url | truncate_url }}</div>
+      <div><strong>Param:</strong> {{ finding.parameter }}</div>
+      <div class="label">Impact (LLM)</div>
+      <div>{{ finding.llm_impact }}</div>
+      <div class="label">Fix Suggestion</div>
+      <div class="mono">{{ finding.fix_suggestion | json_pretty }}</div>
+      <div class="label">PoC</div>
+      <div class="mono">{{ finding.poc_curl | truncate(300) }}</div>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="section">
+    <h2 class="finding-section-title">High Findings ({{ findings_by_severity.high | length }})</h2>
+    {% for finding in findings_by_severity.high %}
+    <div class="finding-card high">
+      <div class="badges">
+        <span class="badge">{{ finding.severity | upper }}</span>
+        <span class="badge">{{ finding.vuln_type }}</span>
+        <span class="badge">{{ finding.owasp_category }}</span>
+        <span class="badge">{{ finding.mitre_id }}</span>
+      </div>
+      <div><strong>Title:</strong> {{ finding.title }}</div>
+      <div><strong>URL:</strong> {{ finding.endpoint_url | truncate_url }}</div>
+      <div><strong>Param:</strong> {{ finding.parameter }}</div>
+      <div class="label">Impact (LLM)</div>
+      <div>{{ finding.llm_impact }}</div>
+      <div class="label">Fix Suggestion</div>
+      <div class="mono">{{ finding.fix_suggestion | json_pretty }}</div>
+      <div class="label">PoC</div>
+      <div class="mono">{{ finding.poc_curl | truncate(300) }}</div>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="section">
+    <h2 class="finding-section-title">Medium Findings ({{ findings_by_severity.medium | length }})</h2>
+    {% for finding in findings_by_severity.medium %}
+    <div class="finding-card medium">
+      <div class="badges">
+        <span class="badge">{{ finding.severity | upper }}</span>
+        <span class="badge">{{ finding.vuln_type }}</span>
+        <span class="badge">{{ finding.owasp_category }}</span>
+        <span class="badge">{{ finding.mitre_id }}</span>
+      </div>
+      <div><strong>Title:</strong> {{ finding.title }}</div>
+      <div><strong>URL:</strong> {{ finding.endpoint_url | truncate_url }}</div>
+      <div><strong>Param:</strong> {{ finding.parameter }}</div>
+      <div class="label">Impact (LLM)</div>
+      <div>{{ finding.llm_impact }}</div>
+      <div class="label">Fix Suggestion</div>
+      <div class="mono">{{ finding.fix_suggestion | json_pretty }}</div>
+      <div class="label">PoC</div>
+      <div class="mono">{{ finding.poc_curl | truncate(300) }}</div>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="section">
+    <h2 class="finding-section-title">Low + Info Findings ({{ low_info_summary | length }})</h2>
+    <table class="low-info-table">
+      <tr>
+        <th>Severity</th>
+        <th>Type</th>
+        <th>Title</th>
+        <th>URL</th>
+      </tr>
+      {% for finding in low_info_summary %}
+      <tr>
+        <td>{{ finding.severity }}</td>
+        <td>{{ finding.vuln_type }}</td>
+        <td>{{ finding.title }}</td>
+        <td>{{ finding.endpoint_url | truncate_url }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </section>
+</body>
+</html>
