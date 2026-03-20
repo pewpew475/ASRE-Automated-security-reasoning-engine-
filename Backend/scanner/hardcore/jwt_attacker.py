@@ -14,6 +14,7 @@ from api.routes.websocket import publish_scan_event
 from scanner.crawler import EndpointData
 from scanner.rule_engine import FindingData
 from tasks.scan_tasks import log_audit_entry
+from utils.audit_logger import log_audit_entry
 
 JWT_PATTERN = re.compile(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*")
 

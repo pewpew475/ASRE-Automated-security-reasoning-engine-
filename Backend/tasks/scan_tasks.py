@@ -19,7 +19,6 @@ from models.finding import Endpoint, Finding
 from models.scan import Scan
 from scanner.chain_builder import ChainBuilder
 from scanner.crawler import Crawler
-from scanner.hardcore.hardcore_runner import HardcoreRunner
 from scanner.llm_analyzer import LLMAnalyzer
 from scanner.poc_generator import PoCGenerator
 from scanner.report_engine import ReportEngine
@@ -90,18 +89,7 @@ async def log_audit_entry(
     response_code: Optional[int],
     notes: Optional[str] = None,
 ) -> None:
-    async with get_db_context() as db:
-        db.add(
-            AuditLog(
-                scan_id=UUID(scan_id),
-                timestamp=datetime.now(timezone.utc),
-                request_method=request_method,
-                request_url=request_url,
-                response_code=response_code,
-                module=module,
-                notes=notes,
-            )
-        )
+    await log_audit_entry(scan_id, module, request_method, request_url, response_code, notes)
 
 
 @celery_app.task(
@@ -245,6 +233,9 @@ async def _run_pipeline_async(task, scan_id: str) -> dict:
         findings_data = list(await rule_engine.run_all_probes())
 
         if mode == "hardcore":
+            # Lazy import to avoid circular dependency
+            from scanner.hardcore.hardcore_runner import HardcoreRunner
+
             consent_record: ConsentRecord | SimpleNamespace | None = None
             async with get_db_context() as db:
                 consent_result = await db.execute(

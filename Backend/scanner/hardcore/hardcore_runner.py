@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 from api.routes.websocket import publish_scan_event
 from config import settings
 from scanner.crawler import EndpointData
+# Lazy import to avoid circular dependency
 from scanner.hardcore.jwt_attacker import JWTAttacker
 from scanner.hardcore.nuclei_runner import NucleiRunner
 from scanner.hardcore.rate_limit_tester import RateLimitTester
@@ -12,7 +13,7 @@ from scanner.hardcore.session_tester import SessionTester
 from scanner.hardcore.sqlmap_client import SQLMapClient
 from scanner.hardcore.user_enumerator import UserEnumerator
 from scanner.rule_engine import FindingData
-from tasks.scan_tasks import log_audit_entry
+from utils.audit_logger import log_audit_entry
 
 
 class HardcoreRunner:

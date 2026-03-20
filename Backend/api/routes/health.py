@@ -1,19 +1,17 @@
-from datetime import datetime, timezone
-
-from fastapi import APIRouter, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Response, status
 from redis.asyncio import Redis
 from sqlalchemy import select
 
 from config import settings
 from core.database import get_db_context
 from core.neo4j_client import neo4j_client
+from .models import HealthResponse
 
 router = APIRouter()
 
 
-@router.get("/health", tags=["Health"])
-async def health_check() -> dict | JSONResponse:
+@router.get("/health", response_model=HealthResponse, tags=["Health"])
+async def health_check(response: Response) -> HealthResponse:
     services = {
         "postgresql": "unreachable",
         "neo4j": "unreachable",
@@ -51,15 +49,7 @@ async def health_check() -> dict | JSONResponse:
         status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     else:
         overall = "degraded"
-        status_code = status.HTTP_200_OK
+        status_code = status.HTTP_206_PARTIAL_CONTENT
 
-    payload = {
-        "status": overall,
-        "version": settings.APP_VERSION,
-        "services": services,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-
-    if status_code == status.HTTP_200_OK:
-        return payload
-    return JSONResponse(status_code=status_code, content=payload)
+    response.status_code = status_code
+    return HealthResponse(overall=overall, services=services)

@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import List, Optional
 
 from pydantic import Field
@@ -66,8 +67,10 @@ class Settings(BaseSettings):
     CONSENT_EXPIRY_DAYS: int = 30
     TC_CURRENT_VERSION: str = "1.0.0"
 
+    _ENV_FILE_PATH = Path(__file__).resolve().parent.parent / ".env"
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_ENV_FILE_PATH),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",

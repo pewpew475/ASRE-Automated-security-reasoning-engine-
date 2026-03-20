@@ -6,6 +6,7 @@ from scanner.hardcore.user_enumerator import UserEnumerator
 from scanner.hardcore.jwt_attacker import JWTAttacker
 from scanner.hardcore.session_tester import SessionTester
 
+# Avoid importing all submodules directly to prevent circular dependencies
 __all__ = [
     "HardcoreRunner",
     "SQLMapClient",
