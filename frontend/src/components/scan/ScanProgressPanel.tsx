@@ -10,7 +10,7 @@ import { useScanStore } from "@/store/scanStore";
 export function ScanProgressPanel({ scanId }: { scanId: string }) {
   const progress = useScanStore((s) => s.progress);
   const liveFindings = useScanStore((s) => s.liveFindings);
-  const { connected } = useScanWebSocket(scanId);
+  const { connected, reconnectCount, error } = useScanWebSocket(scanId);
   const { percentComplete, elapsedSeconds } = useScanProgress();
 
   const completedPhases = useMemo(() => {
@@ -24,6 +24,18 @@ export function ScanProgressPanel({ scanId }: { scanId: string }) {
       <div className="flex items-center justify-between text-xs text-text-secondary">
         <span>WebSocket: {connected ? "connected" : "disconnected"}</span>
         <span>Elapsed: {elapsedSeconds}s</span>
+      </div>
+      <div className="rounded border border-bg-tertiary bg-bg-primary p-3 text-sm">
+        <div className="font-medium text-text-primary">{progress.phase_detail || `Phase: ${progress.phase}`}</div>
+        {progress.current_url ? (
+          <div className="mt-1 truncate text-xs text-text-secondary">Current URL: {progress.current_url}</div>
+        ) : null}
+        {!connected ? (
+          <div className="mt-1 text-xs text-yellow-400">
+            Reconnecting WebSocket{reconnectCount > 0 ? ` (attempt ${reconnectCount})` : ""}
+            {error ? ` - ${error}` : ""}
+          </div>
+        ) : null}
       </div>
       <ScanPhaseTimeline currentPhase={progress.phase} completedPhases={completedPhases} />
       <ProgressBar value={percentComplete} label={`Phase: ${progress.phase}`} />

@@ -66,6 +66,12 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         base_url="https://api.together.xyz/v1",
         langchain_cls="ChatOpenAI",
     ),
+    "nvidia": ProviderConfig(
+        name="NVIDIA NIM",
+        requires_key=True,
+        base_url="https://integrate.api.nvidia.com/v1",
+        langchain_cls="ChatOpenAI",
+    ),
     "openrouter": ProviderConfig(
         name="OpenRouter",
         requires_key=True,
@@ -86,6 +92,11 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
     ),
 }
 
+PROVIDER_ALIASES: Dict[str, str] = {
+    "nim": "nvidia",
+    "nv": "nvidia",
+}
+
 
 class LLMRegistry:
     """Singleton factory for provider-agnostic LangChain chat clients."""
@@ -103,6 +114,7 @@ class LLMRegistry:
         override_base_url: Optional[str] = None,
     ) -> BaseChatModel:
         provider = (override_provider or settings.LLM_PROVIDER).lower().strip()
+        provider = PROVIDER_ALIASES.get(provider, provider)
         model = override_model or settings.LLM_MODEL
         api_key = override_api_key or settings.effective_llm_api_key
         temperature = settings.LLM_TEMPERATURE

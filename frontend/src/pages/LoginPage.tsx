@@ -2,6 +2,7 @@ import { Shield } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
+import type { AxiosError } from "axios";
 
 import { useAuthStore } from "@/store/authStore";
 
@@ -18,7 +19,13 @@ export function LoginPage() {
     try {
       await login(email, password);
       navigate("/dashboard");
-    } catch {
+    } catch (error) {
+      const axiosError = error as AxiosError<{ detail?: unknown }>;
+      const detail = axiosError.response?.data?.detail;
+      if (typeof detail === "string") {
+        toast.error(detail);
+        return;
+      }
       toast.error("Invalid email or password");
     }
   };

@@ -55,6 +55,27 @@ def _as_dict(data: object) -> dict:
     return data.__dict__ if hasattr(data, "__dict__") else {}
 
 
+def _to_text(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    if isinstance(value, (list, tuple, set)):
+        items = [str(item).strip() for item in value if str(item).strip()]
+        return "\n".join(items) if items else None
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=True)
+    return str(value)
+
+
+def _bounded_text(value: object, max_len: int) -> str | None:
+    text = _to_text(value)
+    if text is None:
+        return None
+    return text[:max_len]
+
+
 async def _is_cancelled(scan_id: str) -> bool:
     async with get_db_context() as db:
         scan = await db.get(Scan, UUID(scan_id))
@@ -103,27 +124,11 @@ def run_scan_pipeline(self, scan_id: str) -> dict:
     try:
         return asyncio.run(_run_pipeline_async(self, scan_id))
     except SoftTimeLimitExceeded:
-        asyncio.run(
-            update_scan_status(
-                scan_id,
-                "failed",
-                error_message="Scan exceeded time limit (1 hour)",
-                completed_at=datetime.now(timezone.utc),
-            )
-        )
         logger.error("Scan %s hit soft time limit", scan_id)
         return {"status": "failed", "reason": "time_limit"}
     except Exception as exc:
         logger.exception("Scan %s crashed: %s", scan_id, exc)
-        asyncio.run(
-            update_scan_status(
-                scan_id,
-                "failed",
-                error_message=str(exc),
-                completed_at=datetime.now(timezone.utc),
-            )
-        )
-        raise self.retry(exc=exc, countdown=60)
+        return {"status": "failed", "scan_id": scan_id, "reason": str(exc)}
 
 
 async def _run_pipeline_async(task, scan_id: str) -> dict:
@@ -367,10 +372,10 @@ async def _run_pipeline_async(task, scan_id: str) -> dict:
                         update(Finding)
                         .where(Finding.id == row.id)
                         .values(
-                            llm_impact=analysis_dict.get("llm_impact"),
-                            fix_suggestion=analysis_dict.get("fix_suggestion"),
-                            owasp_category=analysis_dict.get("owasp_category"),
-                            mitre_id=analysis_dict.get("mitre_id"),
+                            llm_impact=_to_text(analysis_dict.get("llm_impact")),
+                            fix_suggestion=_to_text(analysis_dict.get("fix_suggestion")),
+                            owasp_category=_bounded_text(analysis_dict.get("owasp_category"), 50),
+                            mitre_id=_bounded_text(analysis_dict.get("mitre_id"), 20),
                         )
                     )
 
@@ -387,11 +392,26 @@ async def _run_pipeline_async(task, scan_id: str) -> dict:
 
             await asyncio.sleep(1)
 
-        summary = await llm_analyzer.generate_executive_summary(
-            scan_id=scan_id,
-            findings=findings_data,
-            chains=chains,
-        )
+        try:
+            summary = await llm_analyzer.generate_executive_summary(
+                scan_id=scan_id,
+                findings=findings_data,
+                chains=chains,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Executive summary generation failed for scan=%s: %s",
+                scan_id,
+                exc,
+            )
+            summary = {
+                "headline": "Scan complete with partial LLM output.",
+                "summary": "Executive summary unavailable due to LLM configuration or provider errors.",
+                "top_risks": [],
+                "immediate_actions": [],
+                "overall_risk_rating": "unknown",
+                "compliance_flags": ["llm_summary_unavailable"],
+            }
 
         if await _is_cancelled(scan_id):
             return {"status": "cancelled", "scan_id": scan_id}
@@ -401,7 +421,7 @@ async def _run_pipeline_async(task, scan_id: str) -> dict:
         poc_generator = PoCGenerator(scan_id=scan_id)
         for row, source in zip(finding_rows, findings_data):
             try:
-                poc_curl = await poc_generator.generate(source)
+                poc_result = await poc_generator.generate(source)
             except Exception as exc:
                 logger.warning("PoC generation failed for finding=%s: %s", row.id, exc)
                 continue
@@ -410,7 +430,7 @@ async def _run_pipeline_async(task, scan_id: str) -> dict:
                 await db.execute(
                     update(Finding)
                     .where(Finding.id == row.id)
-                    .values(poc_curl=poc_curl)
+                    .values(poc_curl=_to_text(_value(poc_result, "poc_curl", None)))
                 )
 
             await publish_scan_event(
@@ -476,6 +496,16 @@ async def _run_pipeline_async(task, scan_id: str) -> dict:
         )
         await publish_scan_event(scan_id, "scan.cancelled", {"reason": "cancelled"})
         return {"status": "cancelled", "scan_id": scan_id}
+    except Exception as exc:
+        logger.exception("Pipeline failure for scan=%s: %s", scan_id, exc)
+        await update_scan_status(
+            scan_id,
+            "failed",
+            completed_at=datetime.now(timezone.utc),
+            error_message=str(exc),
+        )
+        await publish_scan_event(scan_id, "scan.failed", {"reason": str(exc)})
+        return {"status": "failed", "scan_id": scan_id, "reason": str(exc)}
     finally:
         await neo4j_client.disconnect()
 

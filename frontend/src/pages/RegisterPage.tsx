@@ -2,6 +2,7 @@ import { ShieldCheck } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
+import type { AxiosError } from "axios";
 
 import { useAuthStore } from "@/store/authStore";
 
@@ -17,8 +18,19 @@ export function RegisterPage() {
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const normalizedEmail = email.trim();
+    const normalizedFullName = fullName.trim();
+
     if (password.length < 8) {
       toast.error("Password must be at least 8 characters");
+      return;
+    }
+    if (!/[A-Z]/.test(password)) {
+      toast.error("Password must contain at least one uppercase letter");
+      return;
+    }
+    if (!/\d/.test(password)) {
+      toast.error("Password must contain at least one digit");
       return;
     }
     if (password !== confirmPassword) {
@@ -27,10 +39,20 @@ export function RegisterPage() {
     }
 
     try {
-      await register(email, password, fullName);
+      await register(normalizedEmail, password, normalizedFullName);
       toast.success("Account created");
       navigate("/dashboard");
-    } catch {
+    } catch (error) {
+      const axiosError = error as AxiosError<{ detail?: unknown }>;
+      const detail = axiosError.response?.data?.detail;
+      if (Array.isArray(detail) && detail[0] && typeof detail[0] === "object" && "msg" in detail[0]) {
+        toast.error(String((detail[0] as { msg?: string }).msg || "Registration failed"));
+        return;
+      }
+      if (typeof detail === "string") {
+        toast.error(detail);
+        return;
+      }
       toast.error("Registration failed");
     }
   };

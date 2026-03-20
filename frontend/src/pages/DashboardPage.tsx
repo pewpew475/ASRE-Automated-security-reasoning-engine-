@@ -8,6 +8,7 @@ import { reportsApi } from "@/api/reports";
 import { useScanStore } from "@/store/scanStore";
 import { useUIStore } from "@/store/uiStore";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import type { Scan } from "@/types";
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -24,18 +25,23 @@ export function DashboardPage() {
 
   const stats = useMemo(() => {
     const active = scans.filter((s) => ["pending", "crawling", "scanning", "chaining", "analyzing", "generating_poc", "reporting"].includes(s.status)).length;
-    const totalFindings = scans.reduce((acc, s) => acc + s.vulns_found, 0);
-    const critical = scans.reduce((acc, s) => acc + (s.vulns_found > 0 && s.status === "completed" ? 1 : 0), 0);
+    const totalFindings = scans.reduce((acc, s) => acc + Number(s.vulns_found || 0), 0);
+    const critical = scans.reduce((acc, s) => acc + ((Number(s.vulns_found || 0) > 0 && s.status === "completed") ? 1 : 0), 0);
     return { total: scans.length, active, totalFindings, critical };
   }, [scans]);
 
-  const onDownload = async (scanId: string) => {
+  const onDownload = async (scan: Scan) => {
+    if (scan.status !== "completed") {
+      toast.error("Report is available only after scan completion");
+      return;
+    }
+
     try {
-      const blob = await reportsApi.download(scanId);
+      const blob = await reportsApi.download(scan.id);
       const url = URL.createObjectURL(blob.data);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `asre-report-${scanId}.pdf`;
+      a.download = `asre-report-${scan.id}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -89,8 +95,18 @@ export function DashboardPage() {
                   <td className="py-2">
                     <div className="flex gap-2 text-xs">
                       <button type="button" className="rounded bg-bg-primary px-2 py-1" onClick={() => navigate(`/scans/${scan.id}`)}>View</button>
-                      <button type="button" className="rounded bg-bg-primary px-2 py-1" onClick={() => onDownload(scan.id)}>Report</button>
-                      <button type="button" className="rounded bg-severity-critical/25 px-2 py-1 text-severity-criticalFg" onClick={() => void deleteScan(scan.id)}>Delete</button>
+                      <button type="button" className="rounded bg-bg-primary px-2 py-1" onClick={() => onDownload(scan)}>Report</button>
+                      <button
+                        type="button"
+                        className="rounded bg-severity-critical/25 px-2 py-1 text-severity-criticalFg"
+                        onClick={() => {
+                          void deleteScan(scan.id).catch(() => {
+                            toast.error("Delete failed");
+                          });
+                        }}
+                      >
+                        Delete
+                      </button>
                     </div>
                   </td>
                 </tr>

@@ -119,6 +119,29 @@ async def send_heartbeat(scan_id: str, websocket: WebSocket) -> None:
             break
 
 
+async def consume_client_messages(scan_id: str, websocket: WebSocket) -> None:
+    while websocket.client_state == WebSocketState.CONNECTED:
+        try:
+            message = await websocket.receive_json()
+        except WebSocketDisconnect:
+            break
+        except Exception:
+            # Ignore malformed/non-JSON frames and keep the connection alive.
+            continue
+        if not isinstance(message, dict):
+            continue
+
+        event_type = str(message.get("event") or message.get("type") or "").lower()
+        if event_type in {"ping", "client.ping"}:
+            await manager.send_to_one(
+                websocket,
+                manager.build_event("pong", scan_id, {"status": "alive"}),
+            )
+        elif event_type in {"pong", "client.pong"}:
+            # Client acknowledged heartbeat.
+            continue
+
+
 @router.websocket("/scan/{scan_id}")
 async def websocket_scan_endpoint(websocket: WebSocket, scan_id: UUID) -> None:
     scan_id_str = str(scan_id)
@@ -200,30 +223,30 @@ async def websocket_scan_endpoint(websocket: WebSocket, scan_id: UUID) -> None:
             )
 
             if scan.status in {"completed", "failed", "cancelled"}:
+                status_key = str(scan.status)
                 final_event = {
                     "completed": "scan.completed",
                     "failed": "scan.failed",
                     "cancelled": "scan.cancelled",
-                }[scan.status]
+                }[status_key]
                 await manager.send_to_one(
                     websocket,
                     manager.build_event(
                         final_event,
                         scan_id_str,
                         {
-                            "status": scan.status,
+                            "status": status_key,
                             "error_message": scan.error_message,
                         },
                     ),
                 )
-                await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
-                return
 
         await manager.connect(scan_id_str, websocket)
 
         results = await asyncio.gather(
             listen_for_scan_events(scan_id_str, websocket),
             send_heartbeat(scan_id_str, websocket),
+            consume_client_messages(scan_id_str, websocket),
             return_exceptions=True,
         )
 
@@ -234,8 +257,15 @@ async def websocket_scan_endpoint(websocket: WebSocket, scan_id: UUID) -> None:
         pass
     finally:
         await manager.disconnect(scan_id_str, websocket)
-        if websocket.client_state == WebSocketState.CONNECTED:
-            await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
+        if (
+            websocket.client_state == WebSocketState.CONNECTED
+            and websocket.application_state == WebSocketState.CONNECTED
+        ):
+            try:
+                await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
+            except RuntimeError:
+                # Another task may have already sent the close frame.
+                pass
         logger.info("WS session ended: scan=%s", scan_id_str)
 
 

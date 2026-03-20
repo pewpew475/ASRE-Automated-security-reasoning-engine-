@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 
 import apiClient from "@/api/client";
@@ -15,13 +15,47 @@ export function HardcoreConsentGate({ domain, onLocked }: HardcoreConsentGatePro
   const [verified, setVerified] = useState(false);
   const [scopeLocked, setScopeLocked] = useState(false);
   const [scopeConfirm, setScopeConfirm] = useState(false);
+  const [consentId, setConsentId] = useState<string | null>(null);
+  const [dnsValue, setDnsValue] = useState<string>("");
 
-  const token = useMemo(() => crypto.randomUUID(), []);
-  const dnsValue = `pentest-verify=${token}`;
+  useEffect(() => {
+    if (!domain || domain === "your-domain.com") {
+      setConsentId(null);
+      setDnsValue("");
+      setVerified(false);
+      setScopeLocked(false);
+      setScopeConfirm(false);
+      setStep(1);
+    }
+  }, [domain]);
+
+  const initConsent = async () => {
+    if (!domain || domain === "your-domain.com") {
+      toast.error("Set a valid target URL first");
+      return;
+    }
+
+    try {
+      const { data } = await apiClient.post("/consent/init", {
+        target_url: `https://${domain}`,
+        agreed_to_tc: true,
+      });
+      setConsentId(data.consent_id);
+      setDnsValue(data.dns_txt_record || "");
+      setStep(2);
+    } catch {
+      toast.error("Unable to initialize consent");
+    }
+  };
 
   const verify = async () => {
+    if (!consentId) {
+      toast.error("Initialize consent first");
+      return;
+    }
+
     try {
-      await apiClient.post("/consent/verify-domain", { target_domain: domain, token });
+      await apiClient.post("/consent/verify-domain", { consent_id: consentId, domain });
       setVerified(true);
       setStep(3);
       toast.success("Domain verified");
@@ -31,8 +65,13 @@ export function HardcoreConsentGate({ domain, onLocked }: HardcoreConsentGatePro
   };
 
   const lockScope = async () => {
+    if (!consentId) {
+      toast.error("Initialize consent first");
+      return;
+    }
+
     try {
-      await apiClient.post("/consent/lock-scope", { target_domain: domain, scope_locked: true });
+      await apiClient.post("/consent/lock-scope", { consent_id: consentId });
       setScopeLocked(true);
       onLocked(true);
       toast.success("Scope locked");
@@ -63,7 +102,7 @@ export function HardcoreConsentGate({ domain, onLocked }: HardcoreConsentGatePro
             type="button"
             className="mt-3 rounded bg-brand px-3 py-1.5 text-sm text-bg-primary disabled:opacity-50"
             disabled={!agreed}
-            onClick={() => setStep(2)}
+            onClick={initConsent}
           >
             Continue
           </button>

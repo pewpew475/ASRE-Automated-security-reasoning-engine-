@@ -5,6 +5,8 @@ import type { Finding, Scan, ScanConfig } from "@/types";
 
 interface ProgressState {
   phase: string;
+  phase_detail: string;
+  current_url: string;
   endpoints_found: number;
   vulns_found: number;
   chains_found: number;
@@ -33,6 +35,8 @@ interface ScanState {
 
 const initialProgress: ProgressState = {
   phase: "pending",
+  phase_detail: "Waiting to start",
+  current_url: "",
   endpoints_found: 0,
   vulns_found: 0,
   chains_found: 0,
@@ -61,19 +65,22 @@ export const useScanStore = create<ScanState>((set, get) => ({
   },
   startScan: async (config) => {
     const { data } = await scansApi.start(config);
+    const status = await scansApi.get(data.scan_id);
     set(() => ({
-      activeScan: data,
-      scans: [data, ...get().scans],
+      activeScan: status.data,
+      scans: [status.data, ...get().scans.filter((s) => s.id !== status.data.id)],
       liveFindings: [],
       progress: {
         phase: "crawling",
+        phase_detail: "Crawler is mapping reachable pages and endpoints",
+        current_url: "",
         endpoints_found: 0,
         vulns_found: 0,
         chains_found: 0,
         phase_started_at: Date.now(),
       },
     }));
-    return data;
+    return status.data;
   },
   cancelScan: async (id) => {
     await scansApi.cancel(id);
@@ -92,6 +99,8 @@ export const useScanStore = create<ScanState>((set, get) => ({
     set(() => ({
       progress: {
         phase: nextPhase,
+        phase_detail: data.phase_detail ?? current.phase_detail,
+        current_url: data.current_url ?? current.current_url,
         endpoints_found: data.endpoints_found ?? current.endpoints_found,
         vulns_found: data.vulns_found ?? current.vulns_found,
         chains_found: data.chains_found ?? current.chains_found,

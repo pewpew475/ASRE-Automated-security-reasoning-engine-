@@ -57,16 +57,30 @@ if errorlevel 1 (
   exit /b 1
 )
 
-set FONTCONFIG_FILE=C:\Windows\Fonts\fonts.conf
+set "API_PORT="
+for /f "tokens=2 delims=:" %%P in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ports=@(8010,8000,8020,8030); foreach($port in $ports){ $listeners=Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique; foreach($ownerPid in $listeners){ $proc=Get-Process -Id ([int]$ownerPid) -ErrorAction SilentlyContinue; if($proc -and $proc.ProcessName -match '^python'){ try { Stop-Process -Id ([int]$ownerPid) -Force -ErrorAction Stop } catch {} } }; Start-Sleep -Milliseconds 300; $live=Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique; $hasLive=$false; foreach($lp in $live){ if(Get-Process -Id ([int]$lp) -ErrorAction SilentlyContinue){ $hasLive=$true } }; if(-not $hasLive){ Write-Output ('PORT:' + $port); exit 0 } }; Write-Output 'PORT:-1'; exit 1"') do set "API_PORT=%%P"
+if "%API_PORT%"=="" (
+  echo [ASRE] Could not allocate a free API port.
+  echo [ASRE] Close any processes on 8000/8010/8020/8030 and try again.
+  exit /b 1
+)
+if "%API_PORT%"=="-1" (
+  echo [ASRE] Could not allocate a free API port.
+  echo [ASRE] Close any processes on 8000/8010/8020/8030 and try again.
+  exit /b 1
+)
+
+set "FONTCONFIG_FILE=%cd%\Backend\fonts.conf"
+set "FONTCONFIG_PATH=%cd%\Backend"
 
 echo [ASRE] Launching backend API, worker, and frontend dev server...
-start "ASRE Backend API" cmd /k "cd /d %cd%\Backend && .venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+start "ASRE Backend API" cmd /k "cd /d %cd%\Backend && .venv\Scripts\python.exe -m uvicorn main:app --app-dir . --host 0.0.0.0 --port %API_PORT% --ws-ping-interval 20 --ws-ping-timeout 60"
 :: Start Celery worker with solo pool for Windows compatibility
 start "ASRE Celery Worker" cmd /k "cd /d %cd%\Backend && .venv\Scripts\python.exe -m celery -A tasks.celery_app.celery_app worker --loglevel=info --pool=solo"
-start "ASRE Frontend" cmd /k "cd /d %cd%\frontend && npm run dev -- --host 0.0.0.0 --port 3000"
+start "ASRE Frontend" cmd /k "cd /d %cd%\frontend && set \"VITE_API_URL=http://localhost:%API_PORT%/api\" && npm run dev -- --host 0.0.0.0 --port 3000"
 
 echo [ASRE] Started.
-echo [ASRE] API: http://localhost:8000/docs
+echo [ASRE] API: http://localhost:%API_PORT%/docs
 echo [ASRE] Frontend: http://localhost:3000
 echo [ASRE] If this is your first run, use setup.bat before start.bat.
 

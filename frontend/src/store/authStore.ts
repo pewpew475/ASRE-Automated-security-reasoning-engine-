@@ -15,6 +15,7 @@ interface AuthState {
 }
 
 const tokenKey = "asre_access_token";
+const refreshTokenKey = "asre_refresh_token";
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   token: localStorage.getItem(tokenKey),
@@ -25,7 +26,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const { data } = await authApi.login({ email, password });
       localStorage.setItem(tokenKey, data.access_token);
-      set(() => ({ token: data.access_token, user: data.user, isLoading: false }));
+      localStorage.setItem(refreshTokenKey, data.refresh_token);
+      let user: User | null = null;
+      try {
+        const me = await authApi.me();
+        user = me.data;
+      } catch {
+        user = null;
+      }
+      set(() => ({ token: data.access_token, user, isLoading: false }));
       toast.success("Welcome back");
     } catch (error) {
       set(() => ({ isLoading: false }));
@@ -37,7 +46,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const { data } = await authApi.register({ email, password, full_name });
       localStorage.setItem(tokenKey, data.access_token);
-      set(() => ({ token: data.access_token, user: data.user, isLoading: false }));
+      localStorage.setItem(refreshTokenKey, data.refresh_token);
+      let user: User | null = null;
+      try {
+        const me = await authApi.me();
+        user = me.data;
+      } catch {
+        user = null;
+      }
+      set(() => ({ token: data.access_token, user, isLoading: false }));
       toast.success("Account created");
     } catch (error) {
       set(() => ({ isLoading: false }));
@@ -46,6 +63,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
   logout: () => {
     localStorage.removeItem(tokenKey);
+    localStorage.removeItem(refreshTokenKey);
     set(() => ({ token: null, user: null }));
     window.location.href = "/login";
   },
@@ -60,6 +78,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set(() => ({ user: data, isLoading: false }));
     } catch {
       localStorage.removeItem(tokenKey);
+      localStorage.removeItem(refreshTokenKey);
       set(() => ({ token: null, user: null, isLoading: false }));
     }
   },

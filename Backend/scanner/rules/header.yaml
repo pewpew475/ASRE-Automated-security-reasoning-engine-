@@ -1,0 +1,25 @@
+name: "Security Headers"
+vuln_type: "header"
+required_headers:
+  - name: "Content-Security-Policy"
+    severity: medium
+  - name: "X-Frame-Options"
+    severity: medium
+  - name: "X-Content-Type-Options"
+    severity: low
+  - name: "Strict-Transport-Security"
+    severity: medium
+  - name: "Referrer-Policy"
+    severity: low
+  - name: "Permissions-Policy"
+    severity: low
+dangerous_headers:
+  - name: "Server"
+    severity: info
+  - name: "X-Powered-By"
+    severity: info
+  - name: "X-AspNet-Version"
+    severity: low
+csp_weak_directives:
+  - "unsafe-inline"
+  - "unsafe-eval"

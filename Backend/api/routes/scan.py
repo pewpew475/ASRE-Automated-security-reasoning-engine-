@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from celery.result import AsyncResult
@@ -9,6 +10,7 @@ from sqlalchemy import case, func, select, update
 from api.deps import CurrentUser, DBSession, get_scan_or_404
 from config import settings
 from models.finding import Endpoint, Finding
+from models.report import Report
 from models.scan import Scan
 from schemas.finding import EndpointResponse, FindingResponse, FindingsListResponse
 from schemas.scan import (
@@ -192,8 +194,8 @@ async def start_scan(
     description="Returns current status, phase, and progress counters.",
 )
 async def get_scan_status(
+    db: DBSession,
     scan: Scan = Depends(get_scan_or_404),
-    db: DBSession = Depends(),
 ) -> ScanStatusResponse:
     _ = db
     try:
@@ -280,8 +282,8 @@ async def get_scan_history(
     description="Terminates the Celery task and marks scan as cancelled.",
 )
 async def cancel_scan(
+    db: DBSession,
     scan: Scan = Depends(get_scan_or_404),
-    db: DBSession = Depends(),
 ) -> dict[str, str]:
     cancellable_statuses = {
         "pending",
@@ -328,6 +330,56 @@ async def cancel_scan(
         _raise_internal_scan_error(exc, context="cancel_scan", scan_id=str(scan.id))
 
 
+@router.delete(
+    "/{scan_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Delete a scan",
+    description="Deletes a scan and related records. Active scans are revoked before deletion.",
+)
+async def delete_scan(
+    db: DBSession,
+    scan: Scan = Depends(get_scan_or_404),
+) -> dict[str, str]:
+    active_statuses = {
+        "pending",
+        "crawling",
+        "scanning",
+        "chaining",
+        "analyzing",
+        "generating_poc",
+        "reporting",
+    }
+
+    try:
+        if scan.status in active_statuses:
+            task_id = scan.celery_task_id or AsyncResult(str(scan.id), app=celery_app).id
+            celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
+
+        report_result = await db.execute(select(Report).where(Report.scan_id == scan.id))
+        report_rows = report_result.scalars().all()
+
+        for report in report_rows:
+            report_path = str(getattr(report, "file_path", "") or "")
+            if report_path:
+                pdf = Path(report_path)
+                if pdf.exists():
+                    pdf.unlink()
+            await db.delete(report)
+
+        await db.delete(scan)
+
+        logger.info("Scan deleted: %s", scan.id)
+        return {
+            "scan_id": str(scan.id),
+            "status": "deleted",
+            "message": "Scan deleted",
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_internal_scan_error(exc, context="delete_scan", scan_id=str(scan.id))
+
+
 @router.get(
     "/{scan_id}/findings",
     response_model=FindingsListResponse,
@@ -336,8 +388,8 @@ async def cancel_scan(
     description="Returns vulnerability findings with optional severity/type filters.",
 )
 async def get_scan_findings(
+    db: DBSession,
     scan: Scan = Depends(get_scan_or_404),
-    db: DBSession = Depends(),
     severity: Optional[str] = Query(
         default=None,
         description="Comma-separated severities: critical,high,medium,low,info",
@@ -399,8 +451,8 @@ async def get_scan_findings(
     description="Returns the list of crawled endpoints from Phase 1.",
 )
 async def get_scan_endpoints(
+    db: DBSession,
     scan: Scan = Depends(get_scan_or_404),
-    db: DBSession = Depends(),
     auth_required: Optional[bool] = Query(
         default=None,
         description="Filter: only auth-required endpoints",

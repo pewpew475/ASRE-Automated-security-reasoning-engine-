@@ -19,6 +19,14 @@ const tabs = ["findings", "graph", "chains", "raw"] as const;
 
 type TabType = (typeof tabs)[number];
 
+const graphReadyStatuses = new Set([
+  "completed",
+  "analyzing",
+  "chaining",
+  "generating_poc",
+  "reporting",
+]);
+
 export function ScanDetailPage() {
   const { scanId = "" } = useParams();
   const activeScan = useScanStore((s) => s.activeScan);
@@ -29,9 +37,38 @@ export function ScanDetailPage() {
   useEffect(() => {
     if (scanId) {
       void fetchScan(scanId);
-      void scansApi.chains(scanId).then((r) => setChains(r.data)).catch(() => setChains([]));
     }
   }, [fetchScan, scanId]);
+
+  useEffect(() => {
+    if (!scanId || !activeScan || activeScan.id !== scanId) {
+      setChains([]);
+      return;
+    }
+
+    if (!graphReadyStatuses.has(activeScan.status)) {
+      setChains([]);
+      return;
+    }
+
+    let cancelled = false;
+    void scansApi
+      .chains(scanId)
+      .then((r) => {
+        if (!cancelled) {
+          setChains(r.data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setChains([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeScan, scanId]);
 
   const isRunning = useMemo(
     () => Boolean(activeScan && ["pending", "crawling", "scanning", "chaining", "analyzing", "generating_poc", "reporting"].includes(activeScan.status)),

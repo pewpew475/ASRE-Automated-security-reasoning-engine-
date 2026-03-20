@@ -42,6 +42,7 @@ celery_app.conf.update(
     task_default_queue="default",
     task_default_exchange="default",
     task_default_routing_key="default",
+    broker_connection_retry_on_startup=True,
     task_routes={
         "tasks.scan_tasks.*": {"queue": "scans"},
         "tasks.report_tasks.*": {"queue": "reports"},
