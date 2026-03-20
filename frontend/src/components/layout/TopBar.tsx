@@ -17,11 +17,11 @@ export function TopBar() {
   const running = active && !["completed", "failed", "cancelled"].includes(active.status);
 
   return (
-    <header className="flex h-14 items-center justify-between border-b border-bg-tertiary bg-bg-secondary px-4">
-      <h1 className="text-sm font-semibold text-text-primary">{title}</h1>
+    <header className="flex h-14 items-center justify-between border-b border-bg-tertiary bg-bg-secondary/85 px-4 backdrop-blur">
+      <h1 className="text-sm font-semibold uppercase tracking-wide text-text-primary">{title}</h1>
       <div className="flex items-center gap-4 text-xs text-text-secondary">
         {running ? (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 rounded-full border border-brand/40 bg-brand/10 px-3 py-1">
             <span className="h-2 w-2 animate-pulse rounded-full bg-brand" />
             <span>Scanning {active.target_url}...</span>
           </div>

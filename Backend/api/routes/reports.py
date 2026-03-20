@@ -1,7 +1,7 @@
 import logging
 from json import dumps
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, Optional, Sequence, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -40,7 +40,7 @@ def _truncate(value: str, limit: int) -> str:
     return f"{text[:limit]}..."
 
 
-def _build_report_context_block(scan: Scan, report: Optional[Report], findings: list[Finding], chains: list[dict]) -> str:
+def _build_report_context_block(scan: Scan, report: Optional[Report], findings: Sequence[Finding], chains: list[dict]) -> str:
     severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
     sorted_findings = sorted(
         findings,

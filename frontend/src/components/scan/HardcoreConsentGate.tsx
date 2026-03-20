@@ -55,12 +55,20 @@ export function HardcoreConsentGate({ domain, onLocked }: HardcoreConsentGatePro
     }
 
     try {
-      await apiClient.post("/consent/verify-domain", { consent_id: consentId, domain });
-      setVerified(true);
-      setStep(3);
-      toast.success("Domain verified");
-    } catch {
-      toast.error("DNS TXT record not found yet");
+      const { data } = await apiClient.post("/consent/verify-domain", { consent_id: consentId, domain });
+      if (data?.verified) {
+        setVerified(true);
+        setStep(3);
+        toast.success("Domain verified");
+        return;
+      }
+
+      setVerified(false);
+      setStep(2);
+      toast.error(data?.message || "DNS TXT record not found yet");
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail;
+      toast.error(String(detail || "DNS TXT record not found yet"));
     }
   };
 

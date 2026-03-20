@@ -20,7 +20,7 @@ export function Sidebar() {
   const logout = useAuthStore((s) => s.logout);
 
   return (
-    <aside className={cn("flex h-full flex-col border-r border-bg-tertiary bg-bg-secondary", sidebarOpen ? "w-60" : "w-16")}>
+    <aside className={cn("flex h-full flex-col border-r border-bg-tertiary bg-bg-secondary/92 backdrop-blur", sidebarOpen ? "w-60" : "w-16")}>
       <button
         className="flex items-center gap-2 border-b border-bg-tertiary p-4 text-left"
         onClick={toggleSidebar}
@@ -39,7 +39,7 @@ export function Sidebar() {
               to={item.to}
               className={({ isActive }) =>
                 cn(
-                  "mb-1 flex items-center gap-2 rounded-md border-l-2 p-2 text-sm text-text-secondary hover:bg-bg-tertiary",
+                  "mb-1 flex items-center gap-2 rounded-md border-l-2 p-2 text-sm text-text-secondary hover:bg-bg-tertiary/80",
                   isActive ? "border-brand bg-brand/10 text-text-primary" : "border-transparent"
                 )
               }

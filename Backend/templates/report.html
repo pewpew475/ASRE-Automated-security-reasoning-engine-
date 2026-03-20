@@ -379,7 +379,7 @@
       <div><strong>{{ chain.entry_point }}</strong> -> <strong>{{ chain.final_impact }}</strong></div>
       <div class="small">Severity Score: {{ chain.severity_score }}/10 | Length: {{ chain.length }} hops</div>
       <div class="label">Narrative</div>
-      <div>{{ chain.llm_analysis or "Analysis pending" }}</div>
+      <div>{{ chain.llm_analysis or "Narrative not generated for this chain. Prioritize using severity score and hop count." }}</div>
     </div>
     {% endfor %}
   </section>

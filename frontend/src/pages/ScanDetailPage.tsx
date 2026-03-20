@@ -1,5 +1,6 @@
 import { Download } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 
@@ -33,6 +34,7 @@ export function ScanDetailPage() {
   const fetchScan = useScanStore((s) => s.fetchScan);
   const [chains, setChains] = useState<ChainData[]>([]);
   const [tab, setTab] = useState<TabType>("findings");
+  const [minSeverity, setMinSeverity] = useState(0);
 
   useEffect(() => {
     if (scanId) {
@@ -73,6 +75,11 @@ export function ScanDetailPage() {
   const isRunning = useMemo(
     () => Boolean(activeScan && ["pending", "crawling", "scanning", "chaining", "analyzing", "generating_poc", "reporting"].includes(activeScan.status)),
     [activeScan]
+  );
+
+  const visibleChains = useMemo(
+    () => chains.filter((chain) => Number(chain.severity_score || 0) >= minSeverity),
+    [chains, minSeverity]
   );
 
   const onDownload = async () => {
@@ -119,18 +126,23 @@ export function ScanDetailPage() {
             <StatusBadge status={activeScan.status} />
           </div>
         </div>
-        <button type="button" onClick={onDownload} className="rounded bg-brand px-3 py-2 text-sm font-medium text-bg-primary">
-          <Download className="mr-1 inline h-4 w-4" /> Download PDF
-        </button>
+        <div className="flex items-center gap-2">
+          <Link to={`/scans/${scanId}/report`} className="rounded border border-brand/40 bg-bg-primary px-3 py-2 text-sm font-medium text-text-primary hover:border-brand">
+            Open Report
+          </Link>
+          <button type="button" onClick={onDownload} className="rounded bg-brand px-3 py-2 text-sm font-medium text-bg-primary">
+            <Download className="mr-1 inline h-4 w-4" /> Download PDF
+          </button>
+        </div>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2 rounded-lg border border-bg-tertiary bg-bg-secondary p-2">
         {tabs.map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => setTab(t)}
-            className={`rounded px-3 py-1.5 text-sm ${tab === t ? "bg-brand text-bg-primary" : "bg-bg-secondary text-text-secondary"}`}
+            className={`rounded px-3 py-1.5 text-sm capitalize ${tab === t ? "bg-brand text-bg-primary" : "bg-bg-primary text-text-secondary hover:text-text-primary"}`}
           >
             {t}
           </button>
@@ -139,7 +151,29 @@ export function ScanDetailPage() {
 
       {tab === "findings" ? <FindingsList scanId={scanId} /> : null}
       {tab === "graph" ? <AttackGraph scanId={scanId} /> : null}
-      {tab === "chains" ? <div className="grid gap-3 md:grid-cols-2">{chains.map((c) => <ChainCard key={c.path_id} chain={c} />)}</div> : null}
+      {tab === "chains" ? (
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-bg-tertiary bg-bg-secondary p-3">
+            <div>
+              <h3 className="text-sm font-semibold">Attack Chains</h3>
+              <p className="text-xs text-text-secondary">Showing {visibleChains.length} of {chains.length} chains</p>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-text-secondary">
+              Min severity score
+              <input
+                type="range"
+                min={0}
+                max={10}
+                step={0.5}
+                value={minSeverity}
+                onChange={(event) => setMinSeverity(Number(event.target.value))}
+              />
+              <span className="w-8 text-right text-text-primary">{minSeverity.toFixed(1)}</span>
+            </label>
+          </div>
+          {visibleChains.length ? <div className="grid gap-3 md:grid-cols-2">{visibleChains.map((c) => <ChainCard key={c.path_id} chain={c} />)}</div> : <EmptyState icon={Download} title="No chains for this filter" description="Lower the severity threshold to reveal additional chains." />}
+        </section>
+      ) : null}
       {tab === "raw" ? (
         <CodeBlock language="json" code={JSON.stringify({ scan: activeScan, chains }, null, 2)} filename={`scan-${scanId}.json`} />
       ) : null}

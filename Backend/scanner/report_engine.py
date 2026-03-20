@@ -212,6 +212,7 @@ class ReportEngine:
         }
 
         top_chains = sorted(chains, key=lambda c: c.severity_score, reverse=True)[:20]
+        remediation_roadmap = self._build_remediation_roadmap(finding_rows)
 
         return {
             "scan_id": str(scan.id),
@@ -235,6 +236,7 @@ class ReportEngine:
             "findings_by_severity": grouped,
             "low_info_summary": grouped["low"] + grouped["info"],
             "chains": top_chains,
+            "remediation_roadmap": remediation_roadmap,
             "owasp_breakdown": self._group_by_owasp(findings),
             "vuln_type_breakdown": self._group_by_vuln_type(findings),
         }
@@ -334,7 +336,47 @@ class ReportEngine:
         write_line("Executive Summary", font="Helvetica-Bold", size=12)
         write_wrapped(str(summary.get("headline", "")), width_chars=100, font="Helvetica-Bold", size=10)
         write_wrapped(str(summary.get("summary", "")), width_chars=110)
+        top_risks = summary.get("top_risks", []) or []
+        if top_risks:
+            write_line("Top Risks", font="Helvetica-Bold", size=11)
+            for risk in top_risks[:5]:
+                write_wrapped(f"- {str(risk)}", width_chars=104)
+
+        immediate_actions = summary.get("immediate_actions", []) or []
+        if immediate_actions:
+            write_line("Immediate Actions", font="Helvetica-Bold", size=11)
+            for action in immediate_actions[:5]:
+                write_wrapped(f"- {str(action)}", width_chars=104)
         write_line("")
+
+        roadmap = context.get("remediation_roadmap", []) or []
+        if roadmap:
+            write_line("Remediation Roadmap", font="Helvetica-Bold", size=12)
+            for item in roadmap[:8]:
+                write_wrapped(
+                    f"- Priority {item.get('priority')}: {item.get('title')} | "
+                    f"Count={item.get('count')} | SLA={item.get('sla')}",
+                    width_chars=102,
+                )
+                write_wrapped(f"  Why: {item.get('reason')}", width_chars=100)
+            write_line("")
+
+        chains = context.get("chains", []) or []
+        if chains:
+            write_line("Attack Chain Highlights", font="Helvetica-Bold", size=12)
+            for chain in chains[:10]:
+                narrative = str(getattr(chain, "llm_analysis", "") or "")
+                write_wrapped(
+                    f"- {str(getattr(chain, 'entry_point', 'Entry'))} -> {str(getattr(chain, 'final_impact', 'Impact'))}",
+                    width_chars=102,
+                )
+                write_wrapped(
+                    f"  Score={float(getattr(chain, 'severity_score', 0.0)):.1f}/10 | Length={int(getattr(chain, 'length', 0))} hops",
+                    width_chars=102,
+                )
+                if narrative:
+                    write_wrapped(f"  Narrative: {narrative[:260]}", width_chars=100)
+            write_line("")
 
         write_line("Findings", font="Helvetica-Bold", size=12)
         findings_by_severity = context.get("findings_by_severity", {}) or {}
@@ -356,6 +398,41 @@ class ReportEngine:
                 write_line("")
 
         pdf.save()
+
+    def _build_remediation_roadmap(self, finding_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        buckets = {
+            "critical": {"priority": 1, "sla": "24-48 hours"},
+            "high": {"priority": 2, "sla": "3-7 days"},
+            "medium": {"priority": 3, "sla": "2-4 weeks"},
+            "low": {"priority": 4, "sla": "1-2 months"},
+            "info": {"priority": 5, "sla": "backlog hardening"},
+        }
+
+        counts = Counter(str(item.get("severity", "info")).lower() for item in finding_rows)
+        titles = {
+            "critical": "Stop active exploit paths",
+            "high": "Close privilege escalation vectors",
+            "medium": "Reduce exploit preconditions",
+            "low": "Harden baseline controls",
+            "info": "Improve observability and policy coverage",
+        }
+
+        roadmap = []
+        for severity in ["critical", "high", "medium", "low", "info"]:
+            count = int(counts.get(severity, 0))
+            if count <= 0:
+                continue
+            roadmap.append(
+                {
+                    "priority": buckets[severity]["priority"],
+                    "title": titles[severity],
+                    "count": count,
+                    "sla": buckets[severity]["sla"],
+                    "reason": f"{count} {severity} findings contribute to attack-chain risk and should be handled in this order.",
+                }
+            )
+
+        return sorted(roadmap, key=lambda item: int(item["priority"]))
 
     def _calculate_overall_rating(self, findings: List[Finding]) -> str:
         severities = [str(f.severity or "").lower() for f in findings]

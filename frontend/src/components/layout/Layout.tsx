@@ -5,11 +5,11 @@ import { TopBar } from "@/components/layout/TopBar";
 
 export function Layout() {
   return (
-    <div className="flex h-screen overflow-hidden bg-bg-primary">
+    <div className="asre-grid-bg flex h-screen overflow-hidden bg-bg-primary">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar />
-        <main className="flex-1 overflow-auto p-6">
+        <main className="relative flex-1 overflow-auto p-6">
           <Outlet />
         </main>
       </div>
