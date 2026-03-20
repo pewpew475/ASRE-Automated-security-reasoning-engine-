@@ -31,12 +31,17 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
 
-    OPENAI_API_KEY: Optional[str] = None
-    DEEPSEEK_API_KEY: Optional[str] = None
+    OPENAI_API_KEY: str = ""
+    DEEPSEEK_API_KEY: str = ""
+
+    # Universal LLM Config
     LLM_PROVIDER: str = "openai"
+    LLM_API_KEY: str = ""
     LLM_MODEL: str = "gpt-4o"
-    LLM_MAX_TOKENS: int = 2048
+    LLM_BASE_URL: str = ""
+    LLM_MAX_TOKENS: int = 4096
     LLM_TEMPERATURE: float = 0.2
+    LLM_REQUEST_TIMEOUT: int = 120
 
     MAX_CRAWL_DEPTH: int = 5
     MAX_CRAWL_PAGES: int = 100
@@ -54,7 +59,7 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:3000", "http://localhost:5173"]
     )
 
-    REPORTS_DIR: str = "./reports"
+    REPORTS_DIR: str = "./data/reports"
     TEMPLATES_DIR: str = "./templates"
 
     DNS_VERIFICATION_PREFIX: str = "pentest-verify"
@@ -67,6 +72,24 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore",
     )
+
+    @property
+    def effective_llm_api_key(self) -> str:
+        """Priority: LLM_API_KEY > OPENAI_API_KEY > DEEPSEEK_API_KEY."""
+        if self.LLM_API_KEY:
+            return self.LLM_API_KEY
+        if self.OPENAI_API_KEY:
+            return self.OPENAI_API_KEY
+        if self.DEEPSEEK_API_KEY:
+            return self.DEEPSEEK_API_KEY
+        return ""
+
+    @property
+    def llm_configured(self) -> bool:
+        """True if at least one LLM is properly configured."""
+        if self.LLM_PROVIDER == "ollama":
+            return True
+        return bool(self.effective_llm_api_key)
 
 
 @lru_cache()

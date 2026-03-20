@@ -4,19 +4,31 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.middleware.auth_middleware import AuthMiddleware
-from api.middleware.consent_gate import ConsentGateMiddleware
-from api.middleware.rate_limiter import RateLimiterMiddleware
-from api.routes import auth, consent, graph, report, scan, websocket
+from api.routes import auth, health, llm_config, scan, settings_route, websocket
 from config import settings
 from core.database import init_db
 from core.neo4j_client import neo4j_client
 
 
+def _resolve_optional_middleware(path: str) -> type | None:
+    module_name, class_name = path.rsplit(".", 1)
+    try:
+        module = __import__(module_name, fromlist=[class_name])
+        middleware_class = getattr(module, class_name)
+    except (ImportError, AttributeError):
+        return None
+    return middleware_class
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    os.makedirs(settings.REPORTS_DIR, exist_ok=True)
-    os.makedirs(settings.TEMPLATES_DIR, exist_ok=True)
+    for directory in [
+        settings.REPORTS_DIR,
+        settings.TEMPLATES_DIR,
+        "./data/logs",
+        "./data/scans",
+    ]:
+        os.makedirs(directory, exist_ok=True)
     await init_db()
     await neo4j_client.connect()
     await neo4j_client.init_constraints()
@@ -45,16 +57,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.add_middleware(AuthMiddleware)
-app.add_middleware(ConsentGateMiddleware)
-app.add_middleware(RateLimiterMiddleware)
+for middleware_path in [
+    "api.middleware.auth_middleware.AuthMiddleware",
+    "api.middleware.consent_gate.ConsentGateMiddleware",
+    "api.middleware.rate_limiter.RateLimiterMiddleware",
+]:
+    middleware_class = _resolve_optional_middleware(middleware_path)
+    if middleware_class is not None:
+        app.add_middleware(middleware_class)
 
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(scan.router, prefix="/api/scan", tags=["Scans"])
-app.include_router(graph.router, prefix="/api/scan", tags=["Attack Graph"])
-app.include_router(report.router, prefix="/api/report", tags=["Reports"])
-app.include_router(consent.router, prefix="/api/consent", tags=["Consent"])
 app.include_router(websocket.router, prefix="/ws", tags=["WebSocket"])
+app.include_router(health.router, prefix="/", tags=["Health"])
+app.include_router(settings_route.router, prefix="/api", tags=["Settings"])
+app.include_router(llm_config.router, prefix="/api")
 
 
 @app.get("/")

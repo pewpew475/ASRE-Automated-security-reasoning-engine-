@@ -27,6 +27,7 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=True)
+    is_admin = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
         DateTime(timezone=True),
@@ -38,4 +39,4 @@ class User(Base):
     consent_records = relationship("ConsentRecord", back_populates="user", lazy="selectin")
 
     def __repr__(self) -> str:
-        return f"<User id={self.id} email={self.email}>"
+        return f"<User id={self.id} email={self.email} admin={self.is_admin}>"
