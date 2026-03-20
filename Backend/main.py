@@ -49,14 +49,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=list(getattr(settings, "ALLOWED_ORIGINS", ["http://localhost:3000"])),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 for middleware_path in [
     "api.middleware.auth_middleware.AuthMiddleware",
     "api.middleware.consent_gate.ConsentGateMiddleware",
@@ -65,6 +57,14 @@ for middleware_path in [
     middleware_class = _resolve_optional_middleware(middleware_path)
     if middleware_class is not None:
         app.add_middleware(middleware_class)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(getattr(settings, "ALLOWED_ORIGINS", ["http://localhost:3000", "http://localhost:5173"])),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(scan.router, prefix="/api/scan", tags=["Scans"])

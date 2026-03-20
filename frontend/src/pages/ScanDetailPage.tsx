@@ -1,6 +1,5 @@
 import { Download } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 
@@ -8,6 +7,7 @@ import { reportsApi } from "@/api/reports";
 import { AttackGraph } from "@/components/graph/AttackGraph";
 import { ChainCard } from "@/components/graph/ChainCard";
 import { FindingsList } from "@/components/findings/FindingsList";
+import { ReportAssistantPanel } from "@/components/report/ReportAssistantPanel";
 import { ScanProgressPanel } from "@/components/scan/ScanProgressPanel";
 import { CodeBlock } from "@/components/ui/CodeBlock";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -16,7 +16,7 @@ import { scansApi } from "@/api/scans";
 import { useScanStore } from "@/store/scanStore";
 import type { ChainData } from "@/types";
 
-const tabs = ["findings", "graph", "chains", "raw"] as const;
+const tabs = ["report", "findings", "graph", "chains", "raw"] as const;
 
 type TabType = (typeof tabs)[number];
 
@@ -33,7 +33,7 @@ export function ScanDetailPage() {
   const activeScan = useScanStore((s) => s.activeScan);
   const fetchScan = useScanStore((s) => s.fetchScan);
   const [chains, setChains] = useState<ChainData[]>([]);
-  const [tab, setTab] = useState<TabType>("findings");
+  const [tab, setTab] = useState<TabType>("report");
   const [minSeverity, setMinSeverity] = useState(0);
 
   useEffect(() => {
@@ -127,9 +127,6 @@ export function ScanDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Link to={`/scans/${scanId}/report`} className="rounded border border-brand/40 bg-bg-primary px-3 py-2 text-sm font-medium text-text-primary hover:border-brand">
-            Open Report
-          </Link>
           <button type="button" onClick={onDownload} className="rounded bg-brand px-3 py-2 text-sm font-medium text-bg-primary">
             <Download className="mr-1 inline h-4 w-4" /> Download PDF
           </button>
@@ -148,6 +145,23 @@ export function ScanDetailPage() {
           </button>
         ))}
       </div>
+
+      {tab === "report" ? (
+        <section className="space-y-3">
+          <div className="rounded-lg border border-bg-tertiary bg-bg-secondary p-3">
+            <h3 className="text-sm font-semibold text-text-primary">Generated Report</h3>
+            <p className="mt-1 text-xs text-text-secondary">Review findings on the left and use AI chat on the right for remediation planning.</p>
+          </div>
+          <div className="flex flex-col gap-4 xl:flex-row">
+            <div className="min-w-0 flex-1">
+              <FindingsList scanId={scanId} />
+            </div>
+            <section className="min-h-[calc(100vh-12rem)] w-full overflow-auto xl:min-w-[360px] xl:max-w-[820px] xl:resize-x xl:w-[460px]">
+              <ReportAssistantPanel scanId={scanId} />
+            </section>
+          </div>
+        </section>
+      ) : null}
 
       {tab === "findings" ? <FindingsList scanId={scanId} /> : null}
       {tab === "graph" ? <AttackGraph scanId={scanId} /> : null}

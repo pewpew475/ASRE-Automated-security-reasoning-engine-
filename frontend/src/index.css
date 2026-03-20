@@ -3,7 +3,35 @@
 @tailwind utilities;
 
 :root {
+  --bg-0: #faf9f5;
+  --bg-000: #faf9f5;
+  --bg-100: #ffffff;
+  --bg-200: #f0eee6;
+  --bg-300: #dddddd;
+  --text-100: #1f1e1d;
+  --text-200: #3d3d3a;
+  --text-300: #73726c;
+  --text-400: #888888;
+  --text-500: #999999;
+  --accent: #d97757;
+  --accent-hover: #c6613f;
+  --ease-silk: cubic-bezier(0.2, 0, 0, 1);
   color-scheme: dark;
+}
+
+.dark {
+  --bg-0: #212121;
+  --bg-000: #212121;
+  --bg-100: #262624;
+  --bg-200: #30302e;
+  --bg-300: #454540;
+  --text-100: #ececec;
+  --text-200: #e1e1e0;
+  --text-300: #b4b4b4;
+  --text-400: #8a8a88;
+  --text-500: #6b6b65;
+  --accent: #d2996e;
+  --accent-hover: #e5aa7f;
 }
 
 * {
@@ -43,4 +71,17 @@ body {
     radial-gradient(circle at 12% 8%, rgba(56, 189, 248, 0.12), transparent 30%),
     radial-gradient(circle at 90% 78%, rgba(14, 165, 233, 0.12), transparent 34%),
     linear-gradient(to bottom, rgba(30, 41, 59, 0.35), rgba(15, 23, 42, 0.4));
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
 }

@@ -3,7 +3,7 @@ from datetime import timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import CurrentUser, DBSession
@@ -50,9 +50,11 @@ async def register(
     db: DBSession,
 ) -> TokenResponse:
     _db: AsyncSession = db
+    normalized_email = payload.email.strip().lower()
+    new_user: User | None = None
 
     try:
-        result = await _db.execute(select(User).where(User.email == payload.email))
+        result = await _db.execute(select(User).where(func.lower(User.email) == normalized_email))
         existing_user = result.scalar_one_or_none()
         if existing_user is not None:
             raise HTTPException(
@@ -62,7 +64,7 @@ async def register(
 
         hashed = hash_password(payload.password)
         new_user = User(
-            email=payload.email,
+            email=normalized_email,
             password_hash=hashed,
             full_name=payload.full_name,
         )
@@ -73,9 +75,15 @@ async def register(
     except Exception as exc:
         _raise_internal_error(exc, "register")
 
+    if new_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred. Please try again.",
+        )
+
     access_token = create_access_token(
         subject=str(new_user.id),
-        email=new_user.email,
+        email=str(new_user.email),
         expires_delta=timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES),
     )
     refresh_token = create_refresh_token(
@@ -106,14 +114,16 @@ async def login(
     db: DBSession,
 ) -> TokenResponse:
     _db: AsyncSession = db
+    normalized_email = payload.email.strip().lower()
+    user: User | None = None
 
     try:
-        result = await _db.execute(select(User).where(User.email == payload.email))
+        result = await _db.execute(select(User).where(func.lower(User.email) == normalized_email))
         user = result.scalar_one_or_none()
     except Exception as exc:
         _raise_internal_error(exc, "login")
 
-    if not user or not verify_password(payload.password, user.password_hash):
+    if not user or not verify_password(payload.password, str(user.password_hash)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -122,7 +132,7 @@ async def login(
 
     access_token = create_access_token(
         subject=str(user.id),
-        email=user.email,
+        email=str(user.email),
         expires_delta=timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES),
     )
     refresh_token = create_refresh_token(
@@ -178,6 +188,7 @@ async def refresh_token(
         ) from exc
 
     _db: AsyncSession = db
+    user: User | None = None
     try:
         result = await _db.execute(select(User).where(User.id == user_uuid))
         user = result.scalar_one_or_none()
@@ -193,7 +204,7 @@ async def refresh_token(
 
     new_access_token = create_access_token(
         subject=str(user.id),
-        email=user.email,
+        email=str(user.email),
         expires_delta=timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES),
     )
 

@@ -16,13 +16,22 @@ export function LoginPage() {
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isLoading) {
+      return;
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
     try {
-      await login(email, password);
+      await login(normalizedEmail, password);
       navigate("/dashboard");
     } catch (error) {
       const axiosError = error as AxiosError<{ detail?: unknown }>;
       const detail = axiosError.response?.data?.detail;
       if (typeof detail === "string") {
+        if (axiosError.response?.status === 401) {
+          toast.error("Invalid credentials. If you are new, create an account from Register.");
+          return;
+        }
         toast.error(detail);
         return;
       }

@@ -278,7 +278,13 @@ async def ask_report_assistant(
     chains = await ChainBuilder.get_ranked_chains(scan_id=scan_id)
 
     if not findings and not report and not chains:
-        raise HTTPException(status_code=404, detail="No report context available for this scan yet")
+        return {
+            "answer": (
+                "Report context is not available yet for this scan. "
+                "Wait for report generation to finish, then ask again."
+            ),
+            "scan_id": scan_id,
+        }
 
     if len(payload.history) > 12:
         payload.history = payload.history[-12:]
@@ -295,8 +301,19 @@ async def ask_report_assistant(
     llm = None
     try:
         llm = LLMRegistry.get_client()
+        if llm is None:
+            raise HTTPException(
+                status_code=503,
+                detail="LLM provider not configured. Check your environment settings."
+            )
+    except HTTPException:
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"LLM is not available: {exc}") from exc
+        logger.exception("Failed to initialize LLM client")
+        raise HTTPException(
+            status_code=503,
+            detail="LLM service unavailable. Please check backend logs."
+        ) from exc
 
     messages = [
         SystemMessage(content=system_text),
