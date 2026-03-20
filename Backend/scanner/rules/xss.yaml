@@ -1,0 +1,23 @@
+name: "Cross-Site Scripting (XSS)"
+vuln_type: "xss"
+severity: "high"
+payloads:
+  - "<img src=x onerror=console.log('ASRE-XSS')>"
+  - "<svg/onload=console.log('ASRE-XSS')>"
+  - "javascript:console.log('ASRE-XSS')"
+  - "\"><img src=x onerror=console.log('ASRE-XSS')>"
+  - "{{7*7}}"
+  - "${7*7}"
+detection_marker: "ASRE-XSS"
+dom_sinks:
+  - "document.write("
+  - "innerHTML ="
+  - "eval("
+  - "setTimeout("
+  - "location.hash"
+encoding_bypass:
+  - url_encode: true
+  - html_entity: true
+skip_content_types:
+  - "application/json"
+  - "application/pdf"

@@ -1,0 +1,29 @@
+name: "Broken Authentication"
+vuln_type: "auth"
+severity: "critical"
+admin_paths:
+  - "/admin"
+  - "/admin/login"
+  - "/administrator"
+  - "/wp-admin"
+  - "/phpmyadmin"
+  - "/cpanel"
+  - "/manager"
+  - "/console"
+sensitive_params:
+  - "password"
+  - "passwd"
+  - "pwd"
+  - "pass"
+  - "secret"
+  - "token"
+  - "key"
+  - "api_key"
+jwt_checks:
+  - alg_none: true
+  - weak_secret: true
+  - far_future_exp: true
+cookie_flag_checks:
+  - HttpOnly: medium
+  - Secure: low
+  - SameSite: low

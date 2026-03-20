@@ -1,0 +1,11 @@
+name: "CORS Misconfiguration"
+vuln_type: "cors"
+severity: "high"
+test_origins:
+  - "https://evil-attacker.com"
+  - "null"
+checks:
+  wildcard_origin: true
+  origin_reflection: true
+  null_origin: true
+  credentials_with_wildcard: true

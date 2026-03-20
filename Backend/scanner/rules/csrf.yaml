@@ -1,0 +1,19 @@
+name: "Cross-Site Request Forgery (CSRF)"
+vuln_type: "csrf"
+severity: "high"
+token_param_names:
+  - "csrf"
+  - "csrf_token"
+  - "_token"
+  - "authenticity_token"
+  - "csrfmiddlewaretoken"
+  - "__RequestVerificationToken"
+  - "_csrf"
+state_changing_methods:
+  - "POST"
+  - "PUT"
+  - "PATCH"
+  - "DELETE"
+check_samesite: true
+check_origin_header: true
+evil_origin: "https://evil-attacker.com"

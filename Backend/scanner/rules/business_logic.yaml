@@ -1,0 +1,31 @@
+name: "Business Logic Flaws"
+vuln_type: "business_logic"
+severity: "high"
+price_params:
+  - "price"
+  - "amount"
+  - "total"
+  - "cost"
+  - "qty"
+  - "quantity"
+  - "discount"
+mass_assignment_probes:
+  - role: "admin"
+  - is_admin: true
+  - permissions:
+      - "all"
+test_values:
+  negative:
+    - -1
+    - -100
+  zero:
+    - 0
+  overflow:
+    - 99999999
+rate_limit_endpoints:
+  - "/login"
+  - "/signin"
+  - "/auth/login"
+  - "/forgot-password"
+  - "/reset-password"
+rate_limit_max_probes: 5

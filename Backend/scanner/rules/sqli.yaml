@@ -1,0 +1,19 @@
+name: "SQL Injection"
+vuln_type: "sqli"
+severity: "critical"
+safe_payloads:
+  - "' OR '1'='1"
+  - "' OR '1'='2"
+  - "1 AND 1=1"
+  - "1 AND 1=2"
+error_patterns:
+  - "SQL syntax"
+  - "mysql_fetch"
+  - "ORA-"
+  - "PostgreSQL"
+  - "SQLSTATE"
+  - "Unclosed quotation mark"
+  - "syntax error at or near"
+  - "Warning: mysql"
+mode: "error_and_boolean"
+normal_mode_only: true

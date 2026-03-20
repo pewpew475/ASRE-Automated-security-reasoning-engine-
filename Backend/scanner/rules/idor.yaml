@@ -1,0 +1,19 @@
+name: "Insecure Direct Object Reference (IDOR)"
+vuln_type: "idor"
+severity: "critical"
+id_patterns:
+  - regex: "/\\d+"
+    description: "Numeric ID in path"
+  - regex: "/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+    description: "UUID in path"
+  - regex: "[?&](id|user_id|order_id|account)=\\w+"
+    description: "ID in query param"
+sensitive_path_patterns:
+  - "/user/*"
+  - "/users/*"
+  - "/account/*"
+  - "/profile/*"
+  - "/order/*"
+  - "/api/v*/user/*"
+  - "/api/v*/account/*"
+confirmation_threshold: 2
