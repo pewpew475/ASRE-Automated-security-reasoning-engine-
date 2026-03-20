@@ -1,20 +1,112 @@
 import logging
+from json import dumps
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Optional, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from api.deps import get_current_user
+from core.llm_registry import LLMRegistry
 from core.database import get_db_context
+from models.finding import Finding
 from models.report import Report
 from models.scan import Scan
+from scanner.chain_builder import ChainBuilder
 from tasks.scan_tasks import regenerate_report_task
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 logger = logging.getLogger(__name__)
+
+
+class ReportAssistantMessage(BaseModel):
+    role: str = Field(description="chat role: user or assistant")
+    content: str = Field(min_length=1, max_length=3000)
+
+
+class ReportAssistantRequest(BaseModel):
+    question: str = Field(min_length=3, max_length=4000)
+    history: list[ReportAssistantMessage] = Field(default_factory=list)
+
+
+def _truncate(value: str, limit: int) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}..."
+
+
+def _build_report_context_block(scan: Scan, report: Optional[Report], findings: list[Finding], chains: list[dict]) -> str:
+    severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+    sorted_findings = sorted(
+        findings,
+        key=lambda item: (
+            severity_order.get(str(getattr(item, "severity", "info") or "info").lower(), 5),
+            str(getattr(item, "title", "")),
+        ),
+    )
+
+    top_findings = []
+    for finding in sorted_findings[:25]:
+        top_findings.append(
+            {
+                "severity": str(getattr(finding, "severity", "info") or "info").lower(),
+                "type": str(getattr(finding, "vuln_type", "unknown") or "unknown"),
+                "title": _truncate(str(getattr(finding, "title", "Untitled") or "Untitled"), 140),
+                "endpoint": _truncate(
+                    str(
+                        (
+                            getattr(getattr(finding, "endpoint", None), "url", "")
+                            or (getattr(finding, "evidence", {}) or {}).get("request_url", "")
+                            or "N/A"
+                        )
+                    ),
+                    180,
+                ),
+                "impact": _truncate(str(getattr(finding, "llm_impact", "") or ""), 220),
+                "fix": _truncate(str(getattr(finding, "fix_suggestion", "") or ""), 220),
+            }
+        )
+
+    top_chains = []
+    for chain in chains[:12]:
+        top_chains.append(
+            {
+                "entry_point": _truncate(str(chain.get("entry_point", "")), 160),
+                "final_impact": _truncate(str(chain.get("final_impact", "")), 160),
+                "severity_score": float(chain.get("severity_score", 0.0) or 0.0),
+                "length": int(chain.get("length", 0) or 0),
+                "nodes": [
+                    _truncate(str(node), 120)
+                    for node in (chain.get("nodes", []) or [])[:8]
+                ],
+            }
+        )
+
+    report_summary = {
+        "scan_id": str(getattr(scan, "id", "")),
+        "target_url": str(getattr(scan, "target_url", "")),
+        "mode": str(getattr(scan, "mode", "")),
+        "status": str(getattr(scan, "status", "")),
+        "counts": {
+            "findings_total": len(findings),
+            "critical": sum(1 for item in findings if str(getattr(item, "severity", "")).lower() == "critical"),
+            "high": sum(1 for item in findings if str(getattr(item, "severity", "")).lower() == "high"),
+            "medium": sum(1 for item in findings if str(getattr(item, "severity", "")).lower() == "medium"),
+            "low": sum(1 for item in findings if str(getattr(item, "severity", "")).lower() == "low"),
+            "info": sum(1 for item in findings if str(getattr(item, "severity", "")).lower() == "info"),
+            "chains": len(chains),
+        },
+        "report_generated_at": str(getattr(report, "generated_at", "") or ""),
+        "report_summary": _truncate(str(getattr(report, "executive_summary", "") or ""), 2400),
+        "top_findings": top_findings,
+        "top_chains": top_chains,
+    }
+    return dumps(report_summary, ensure_ascii=True)
 
 
 async def _verify_scan_ownership(scan_id: str, current_user) -> Scan:
@@ -104,10 +196,16 @@ async def download_report(
         )
 
     short_id = scan_id[:8]
-    filename = f"asre-report-{short_id}.pdf"
+    suffix = pdf_path.suffix.lower()
+    media_type = "application/pdf"
+    if suffix == ".html":
+        media_type = "text/html"
+
+    ext = suffix.lstrip(".") or "pdf"
+    filename = f"asre-report-{short_id}.{ext}"
     return FileResponse(
         path=str(pdf_path),
-        media_type="application/pdf",
+        media_type=media_type,
         filename=filename,
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
@@ -156,3 +254,73 @@ async def delete_report(
             await db.flush()
 
     return {"message": "Report deleted"}
+
+
+@router.post("/{scan_id}/assistant")
+async def ask_report_assistant(
+    scan_id: str,
+    payload: ReportAssistantRequest,
+    current_user=Depends(get_current_user),
+) -> dict:
+    scan = await _verify_scan_ownership(scan_id=scan_id, current_user=current_user)
+
+    if not payload.question.strip():
+        raise HTTPException(status_code=400, detail="Question is required")
+
+    async with get_db_context() as db:
+        report = (
+            await db.execute(select(Report).where(Report.scan_id == UUID(scan_id)))
+        ).scalar_one_or_none()
+        findings = (
+            await db.execute(select(Finding).where(Finding.scan_id == UUID(scan_id)).order_by(Finding.detected_at.desc()))
+        ).scalars().all()
+
+    chains = await ChainBuilder.get_ranked_chains(scan_id=scan_id)
+
+    if not findings and not report and not chains:
+        raise HTTPException(status_code=404, detail="No report context available for this scan yet")
+
+    if len(payload.history) > 12:
+        payload.history = payload.history[-12:]
+
+    context_block = _build_report_context_block(scan=scan, report=report, findings=findings, chains=chains)
+
+    system_text = (
+        "You are ASRE Report Assistant. Answer only with guidance relevant to this scan report context. "
+        "If user asks beyond report scope, say that the report does not provide enough evidence and suggest the next scan/probe. "
+        "Prioritize actionable remediation order, exploitability, business impact, and verification steps. "
+        "Use concise sections and bullet points. Do not invent findings."
+    )
+
+    llm = None
+    try:
+        llm = LLMRegistry.get_client()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"LLM is not available: {exc}") from exc
+
+    messages = [
+        SystemMessage(content=system_text),
+        HumanMessage(content=f"SCAN REPORT CONTEXT JSON:\n{context_block}"),
+    ]
+
+    for message in payload.history:
+        role = message.role.strip().lower()
+        content = _truncate(message.content, 3000)
+        if role == "assistant":
+            messages.append(AIMessage(content=content))
+        elif role == "user":
+            messages.append(HumanMessage(content=content))
+
+    messages.append(HumanMessage(content=f"User question: {payload.question.strip()}"))
+
+    try:
+        response = await llm.ainvoke(messages)
+        answer = _truncate(str(getattr(response, "content", "")).strip(), 12000)
+    except Exception as exc:
+        logger.exception("Report assistant failed for scan=%s", scan_id)
+        raise HTTPException(status_code=500, detail=f"Assistant failed: {exc}") from exc
+
+    return {
+        "answer": answer or "I could not generate an answer from the report context.",
+        "scan_id": scan_id,
+    }

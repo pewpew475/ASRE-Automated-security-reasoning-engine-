@@ -3,6 +3,10 @@ import { AlertTriangle } from "lucide-react";
 import type { ChainData } from "@/types";
 
 export function ChainCard({ chain }: { chain: ChainData }) {
+  const nodePath = Array.isArray(chain.nodes)
+    ? chain.nodes.filter((item) => typeof item === "string" && item.trim().length > 0)
+    : [];
+
   return (
     <article className="rounded border border-bg-tertiary bg-bg-secondary p-3">
       <div className="mb-2 flex items-center justify-between">
@@ -10,7 +14,7 @@ export function ChainCard({ chain }: { chain: ChainData }) {
         <span className="text-xs text-text-secondary">{chain.length} hops</span>
       </div>
       <div className="mb-2 text-sm font-semibold">{chain.entry_point} → {chain.final_impact}</div>
-      <div className="text-xs text-text-secondary">{chain.nodes.join(" → ")}</div>
+      <div className="text-xs text-text-secondary">{nodePath.length ? nodePath.join(" → ") : "Chain path unavailable"}</div>
       <div className="mt-2 rounded border-l-2 border-brand bg-bg-primary p-2 text-xs italic text-text-secondary">
         {chain.llm_analysis || "Analysis pending"}
       </div>

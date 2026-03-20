@@ -112,7 +112,9 @@ class Crawler:
         return self.discovered
 
     async def _fetch_robots_txt(self) -> None:
-        robots_url = urljoin(f"{self.target_url}/", "robots.txt")
+        parsed = urlparse(self.target_url)
+        base_origin = f"{parsed.scheme}://{parsed.netloc}/"
+        robots_url = urljoin(base_origin, "robots.txt")
         try:
             async with httpx.AsyncClient(
                 follow_redirects=True,

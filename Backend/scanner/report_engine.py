@@ -1,6 +1,9 @@
 import asyncio
+import importlib
 import json
 import logging
+import os
+import textwrap
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +23,12 @@ from models.scan import Scan
 from scanner.chain_builder import ChainBuilder, ChainData, GraphData, SEVERITY_COLORS
 
 logger = logging.getLogger(__name__)
+
+
+def _load_reportlab() -> tuple[Any, Any]:
+    pagesizes = importlib.import_module("reportlab.lib.pagesizes")
+    canvas_module = importlib.import_module("reportlab.pdfgen.canvas")
+    return pagesizes.A4, canvas_module
 
 
 def _filter_severity_color(severity: str) -> str:
@@ -109,16 +118,33 @@ class ReportEngine:
             executive_summary=executive_summary,
         )
 
-        html_content = await asyncio.to_thread(self._render_html, context)
+        html_content = ""
+        output_format = "pdf"
+        output_path = self.reports_dir / f"{self.scan_id}.pdf"
+        renderer = "reportlab"
 
-        pdf_path = self.reports_dir / f"{self.scan_id}.pdf"
-        await asyncio.to_thread(self._render_pdf, html_content, str(pdf_path))
+        # Prefer ReportLab on Windows to avoid native rendering crashes in worker processes.
+        if os.name == "nt":
+            await asyncio.to_thread(self._render_pdf_reportlab, context, str(output_path))
+        else:
+            try:
+                html_content = await asyncio.to_thread(self._render_html, context)
+                await asyncio.to_thread(self._render_pdf, html_content, str(output_path))
+                renderer = "weasyprint"
+            except Exception as exc:
+                self.logger.warning(
+                    "WeasyPrint render failed for scan=%s, falling back to ReportLab: %s",
+                    self.scan_id,
+                    exc,
+                )
+                await asyncio.to_thread(self._render_pdf_reportlab, context, str(output_path))
 
         async with get_db_context() as db:
             report_kwargs: Dict[str, Any] = {
                 "id": uuid4(),
                 "scan_id": UUID(self.scan_id),
-                "file_path": str(pdf_path),
+                "format": output_format,
+                "file_path": str(output_path),
                 "total_findings": len(db_findings),
                 "critical_count": sum(1 for f in db_findings if str(f.severity) == "critical"),
                 "high_count": sum(1 for f in db_findings if str(f.severity) == "high"),
@@ -130,16 +156,18 @@ class ReportEngine:
             }
 
             if hasattr(Report, "file_size_bytes"):
-                report_kwargs["file_size_bytes"] = pdf_path.stat().st_size
+                report_kwargs["file_size_bytes"] = output_path.stat().st_size
 
             report = Report(**report_kwargs)
             db.add(report)
             await db.flush()
 
         self.logger.info(
-            "Report generated: %s (%s KB)",
-            str(pdf_path),
-            pdf_path.stat().st_size // 1024,
+            "Report generated: %s (%s KB) format=%s renderer=%s",
+            str(output_path),
+            output_path.stat().st_size // 1024,
+            output_format,
+            renderer,
         )
         return report
 
@@ -254,6 +282,80 @@ class ReportEngine:
             output_path,
             presentational_hints=True,
         )
+
+    def _render_pdf_reportlab(self, context: Dict[str, Any], output_path: str) -> None:
+        page_size, canvas_module = _load_reportlab()
+        pdf = canvas_module.Canvas(output_path, pagesize=page_size)
+        width, height = page_size
+        left = 36
+        top = height - 36
+        bottom = 36
+        y = top
+
+        def write_line(text: str, font: str = "Helvetica", size: int = 10) -> None:
+            nonlocal y
+            if y < bottom:
+                pdf.showPage()
+                y = top
+            pdf.setFont(font, size)
+            pdf.drawString(left, y, text)
+            y -= size + 4
+
+        def write_wrapped(text: str, width_chars: int = 110, font: str = "Helvetica", size: int = 10) -> None:
+            lines = textwrap.wrap(text or "", width=width_chars) or [""]
+            for line in lines:
+                write_line(line, font=font, size=size)
+
+        summary = context.get("executive_summary", {}) or {}
+        stats = context.get("stats", {}) or {}
+
+        write_line("ASRE Security Report", font="Helvetica-Bold", size=16)
+        write_line(f"Scan ID: {context.get('scan_id', 'N/A')}")
+        write_line(f"Target: {context.get('target_url', 'N/A')}")
+        write_line(f"Generated: {context.get('generated_at', 'N/A')}")
+        write_line(f"Overall Risk: {str(summary.get('overall_risk_rating', 'unknown')).upper()}")
+        write_line("")
+
+        write_line("Risk Statistics", font="Helvetica-Bold", size=12)
+        write_line(
+            "Critical={critical} High={high} Medium={medium} Low={low} Info={info} "
+            "Endpoints={endpoints} Chains={chains}".format(
+                critical=stats.get("critical", 0),
+                high=stats.get("high", 0),
+                medium=stats.get("medium", 0),
+                low=stats.get("low", 0),
+                info=stats.get("info", 0),
+                endpoints=stats.get("endpoints_found", 0),
+                chains=stats.get("chains", 0),
+            )
+        )
+        write_line("")
+
+        write_line("Executive Summary", font="Helvetica-Bold", size=12)
+        write_wrapped(str(summary.get("headline", "")), width_chars=100, font="Helvetica-Bold", size=10)
+        write_wrapped(str(summary.get("summary", "")), width_chars=110)
+        write_line("")
+
+        write_line("Findings", font="Helvetica-Bold", size=12)
+        findings_by_severity = context.get("findings_by_severity", {}) or {}
+        order = ["critical", "high", "medium", "low", "info"]
+        for severity in order:
+            rows = findings_by_severity.get(severity, []) or []
+            if not rows:
+                continue
+            write_line(f"{severity.upper()} ({len(rows)})", font="Helvetica-Bold", size=11)
+            for finding in rows[:80]:
+                title = str(finding.get("title") or "Untitled")
+                url = str(finding.get("endpoint_url") or "N/A")
+                vuln_type = str(finding.get("vuln_type") or "unknown")
+                impact = str(finding.get("llm_impact") or "")
+                write_wrapped(f"- [{vuln_type}] {title}", width_chars=105)
+                write_wrapped(f"  URL: {url}", width_chars=100)
+                if impact:
+                    write_wrapped(f"  Impact: {impact[:300]}", width_chars=100)
+                write_line("")
+
+        pdf.save()
 
     def _calculate_overall_rating(self, findings: List[Finding]) -> str:
         severities = [str(f.severity or "").lower() for f in findings]

@@ -26,6 +26,7 @@ from scanner.rule_engine import RuleEngine
 from tasks.celery_app import celery_app
 
 logger = get_task_logger(__name__)
+_WORKER_LOOP: asyncio.AbstractEventLoop | None = None
 
 PHASE_BY_STATUS = {
     "pending": "Waiting to start",
@@ -39,6 +40,15 @@ PHASE_BY_STATUS = {
     "failed": "Scan failed",
     "cancelled": "Scan cancelled",
 }
+
+
+def _run_in_worker_loop(coro) -> dict:
+    global _WORKER_LOOP
+
+    if _WORKER_LOOP is None or _WORKER_LOOP.is_closed():
+        _WORKER_LOOP = asyncio.new_event_loop()
+    asyncio.set_event_loop(_WORKER_LOOP)
+    return _WORKER_LOOP.run_until_complete(coro)
 
 
 def _value(data: object, field: str, default: object = None) -> object:
@@ -122,7 +132,7 @@ async def log_audit_entry(
 )
 def run_scan_pipeline(self, scan_id: str) -> dict:
     try:
-        return asyncio.run(_run_pipeline_async(self, scan_id))
+        return _run_in_worker_loop(_run_pipeline_async(self, scan_id))
     except SoftTimeLimitExceeded:
         logger.error("Scan %s hit soft time limit", scan_id)
         return {"status": "failed", "reason": "time_limit"}
@@ -134,12 +144,25 @@ def run_scan_pipeline(self, scan_id: str) -> dict:
 async def _run_pipeline_async(task, scan_id: str) -> dict:
     scan_uuid = UUID(scan_id)
 
-    async with get_db_context() as db:
-        result = await db.execute(select(Scan).where(Scan.id == scan_uuid))
-        scan = result.scalar_one_or_none()
+    scan = None
+    for _ in range(8):
+        async with get_db_context() as db:
+            result = await db.execute(select(Scan).where(Scan.id == scan_uuid))
+            scan = result.scalar_one_or_none()
+        if scan is not None:
+            break
+        await asyncio.sleep(0.25)
 
     if scan is None:
-        raise ValueError(f"Scan not found: {scan_id}")
+        logger.warning(
+            "Scan %s missing when worker started. It may have been deleted before execution.",
+            scan_id,
+        )
+        return {
+            "status": "failed",
+            "scan_id": scan_id,
+            "reason": "scan_not_found",
+        }
 
     if scan.status == "cancelled":
         return {"status": "cancelled", "scan_id": scan_id}
@@ -312,8 +335,6 @@ async def _run_pipeline_async(task, scan_id: str) -> dict:
         await update_scan_status(scan_id, "chaining")
 
         await neo4j_client.connect()
-        await neo4j_client.init_constraints()
-
         chain_builder = ChainBuilder(
             scan_id=scan_id,
             endpoints=endpoints_data,
@@ -540,7 +561,7 @@ def cleanup_stale_scans() -> dict:
         logger.info("Cleanup stale scans completed: %s updated", cleaned_count)
         return {"cleaned_up": cleaned_count}
 
-    return asyncio.run(_cleanup_async())
+    return _run_in_worker_loop(_cleanup_async())
 
 
 @celery_app.task(name="tasks.scan_tasks.regenerate_report_task")
@@ -579,4 +600,4 @@ def regenerate_report_task(scan_id: str) -> dict:
             "report_id": str(_value(report, "id", "")),
         }
 
-    return asyncio.run(_regenerate_async())
+    return _run_in_worker_loop(_regenerate_async())

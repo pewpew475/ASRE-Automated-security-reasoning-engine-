@@ -138,17 +138,20 @@ async def start_scan(
         )
         db.add(new_scan)
         await db.flush()
+        scan_id = new_scan.id
+        # Commit before enqueue to ensure worker can always read the scan row.
+        await db.commit()
 
         try:
             task = run_scan_pipeline.apply_async(
-                args=[str(new_scan.id)],
+                args=[str(scan_id)],
                 queue="scans",
-                task_id=str(new_scan.id),
+                task_id=str(scan_id),
             )
         except ConnectionError as exc:
             await db.execute(
                 update(Scan)
-                .where(Scan.id == new_scan.id)
+                .where(Scan.id == scan_id)
                 .values(
                     status="failed",
                     completed_at=datetime.now(timezone.utc),
@@ -156,28 +159,33 @@ async def start_scan(
                 )
             )
             await db.commit()
-            logger.error("Celery queue unavailable while starting scan %s", new_scan.id, exc_info=True)
+            logger.error("Celery queue unavailable while starting scan %s", scan_id, exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Scan queue is currently unavailable. Please try again shortly.",
             ) from exc
 
-        new_scan.celery_task_id = task.id
+        await db.execute(
+            update(Scan)
+            .where(Scan.id == scan_id)
+            .values(celery_task_id=task.id)
+        )
+        await db.commit()
 
         logger.info(
             "Scan queued: %s | mode=%s | target=%s | user=%s",
-            new_scan.id,
+            scan_id,
             payload.mode,
             payload.target_url,
             current_user.email,
         )
 
         return ScanCreateResponse(
-            scan_id=new_scan.id,
+            scan_id=scan_id,
             status="pending",
             message=(
                 "Scan queued successfully. "
-                f"Track progress at /api/scan/{new_scan.id}/status"
+                f"Track progress at /api/scan/{scan_id}/status"
             ),
         )
     except HTTPException:

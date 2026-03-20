@@ -3,7 +3,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
@@ -394,22 +394,6 @@ class ChainBuilder:
             {"scan_id": self.scan_id},
         )
 
-        _ = await neo4j_client.execute_query(
-            """
-            MATCH path = (v1:Vulnerability {scan_id: $scan_id})
-                         -[:CHAINS_WITH*1..3]->
-                         (v2:Vulnerability)
-            RETURN
-              v1.type AS start_vuln,
-              v2.type AS end_vuln,
-              length(path) AS chain_length,
-              [r IN relationships(path) | r.reason] AS chain_reasons
-            ORDER BY chain_length DESC
-            LIMIT 20
-            """,
-            {"scan_id": self.scan_id},
-        )
-
         dedup: Dict[Tuple[str, str], ChainData] = {}
 
         for row in primary_rows:
@@ -473,6 +457,27 @@ class ChainBuilder:
 
     @staticmethod
     async def get_graph_for_frontend(scan_id: str) -> GraphData:
+        def _as_props(value: object) -> Dict:
+            if value is None:
+                return {}
+            if isinstance(value, dict):
+                return value
+            if hasattr(value, "items"):
+                try:
+                    return dict((value).items())  # type: ignore[attr-defined]
+                except Exception:
+                    return {}
+            if isinstance(value, str):
+                try:
+                    parsed = json.loads(value)
+                    return parsed if isinstance(parsed, dict) else {"value": value}
+                except Exception:
+                    return {"value": value}
+            try:
+                return dict(value)  # type: ignore[arg-type]
+            except Exception:
+                return {}
+
         node_rows = await neo4j_client.execute_query(
             """
             MATCH (n {scan_id: $scan_id})
@@ -494,7 +499,7 @@ class ChainBuilder:
         for row in node_rows:
             node_type = str(row.get("node_type", "Unknown"))
             props_raw = row.get("props", {})
-            props = dict(props_raw) if props_raw else {}
+            props = _as_props(props_raw)
 
             node_id = (
                 props.get("endpoint_id")
@@ -523,9 +528,9 @@ class ChainBuilder:
             target_props_raw = row.get("target_props", {})
             rel_props_raw = row.get("rel_props", {})
 
-            source_props = dict(source_props_raw) if source_props_raw else {}
-            target_props = dict(target_props_raw) if target_props_raw else {}
-            rel_props = dict(rel_props_raw) if rel_props_raw else {}
+            source_props = _as_props(source_props_raw)
+            target_props = _as_props(target_props_raw)
+            rel_props = _as_props(rel_props_raw)
 
             source_id = (
                 source_props.get("endpoint_id")
@@ -559,9 +564,14 @@ class ChainBuilder:
         chains = [
             ChainData(
                 path_id=str(item.get("path_id", str(uuid4()))),
-                nodes=[],
+                nodes=[
+                    str(item.get("entry_point", "")),
+                    str(item.get("vuln_type", "")),
+                    str(item.get("asset_type", "")),
+                    str(item.get("final_impact", item.get("impact", ""))),
+                ],
                 entry_point=str(item.get("entry_point", "")),
-                final_impact=str(item.get("final_impact", "")),
+                final_impact=str(item.get("final_impact", item.get("impact", ""))),
                 severity_score=float(item.get("severity_score", 0.0)),
                 length=int(item.get("length", 0)),
                 llm_analysis=item.get("llm_analysis"),
@@ -628,6 +638,9 @@ class ChainBuilder:
                 "length": length,
                 "entry_point": entry,
                 "final_impact": impact,
+                "vuln_type": str(row.get("vuln_type", "unknown")),
+                "asset_type": str(row.get("asset_type", "UnknownAsset")),
+                "nodes": [entry, str(row.get("vuln_type", "unknown")), str(row.get("asset_type", "UnknownAsset")), impact],
                 "severity_score": score,
                 "llm_analysis": None,
             }

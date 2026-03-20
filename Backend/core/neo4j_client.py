@@ -10,6 +10,7 @@ from config import settings
 class Neo4jClient:
     def __init__(self) -> None:
         self._driver: Optional[AsyncDriver] = None
+        self._schema_initialized = False
         self.logger = logging.getLogger(__name__)
 
     async def connect(self) -> None:
@@ -56,6 +57,9 @@ class Neo4jClient:
         return self._driver
 
     async def init_constraints(self) -> None:
+        if self._schema_initialized:
+            return
+
         statements = [
             """
             CREATE CONSTRAINT asre_endpoint_unique IF NOT EXISTS
@@ -113,6 +117,7 @@ class Neo4jClient:
                 self.logger.warning("Neo4j schema statement failed: %s", exc)
 
         self.logger.info("Neo4j constraints + indexes initialized")
+        self._schema_initialized = True
 
     async def execute_query(
         self,
