@@ -9,7 +9,7 @@ from sqlalchemy import select
 from api.deps import get_current_user
 from core.database import get_db_context
 from models.consent import ConsentRecord
-from services.consent_service import ConsentService
+from services.consent_service import ConsentService, _build_record_candidates
 
 router = APIRouter(prefix="/consent", tags=["Consent"])
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ async def init_consent(
     return {
         "consent_id": str(consent.id),
         "domain": consent.target_domain,
-        "dns_txt_record": f"pentest-verify={consent.dns_txt_token}",
+        "dns_txt_record": str(consent.dns_txt_token),
         "dns_record_name": f"_asre-verify.{consent.target_domain}",
         "expires_at": consent.expires_at.isoformat() if consent.expires_at is not None else None,
         "next_step": "dns_verification",
@@ -94,8 +94,9 @@ async def verify_domain(
             "DNS TXT record not found yet. DNS propagation can take up to 5 minutes. "
             "Try again shortly."
         ),
-        "expected_record": f"pentest-verify={consent.dns_txt_token}",
+        "expected_record": str(consent.dns_txt_token),
         "record_name": f"_asre-verify.{consent.target_domain}",
+        "checked_record_names": _build_record_candidates(str(consent.target_domain)),
     }
 
 

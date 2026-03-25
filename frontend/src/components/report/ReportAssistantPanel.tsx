@@ -1,5 +1,7 @@
 import { Archive, Bot, Clock3, Loader2, MessageSquarePlus, Sparkles, User } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import toast from "react-hot-toast";
 
 import { reportsApi } from "@/api/reports";
@@ -89,6 +91,7 @@ export function ReportAssistantPanel({ scanId }: { scanId: string }) {
   const [activeSessionId, setActiveSessionId] = useState("");
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const loaded = loadScanSessions(scanId);
@@ -108,6 +111,10 @@ export function ReportAssistantPanel({ scanId }: { scanId: string }) {
     if (!sessions.length) return;
     saveScanSessions(scanId, sessions);
   }, [scanId, sessions]);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [activeSessionId, busy, sessions]);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) || sessions[0] || null,
@@ -180,7 +187,7 @@ export function ReportAssistantPanel({ scanId }: { scanId: string }) {
   };
 
   return (
-    <aside className="flex h-full min-h-[calc(100vh-12rem)] flex-col overflow-hidden rounded-2xl border border-bg-tertiary bg-gradient-to-b from-[#101f34] via-[#122741] to-[#0d1c33] p-3 shadow-2xl shadow-black/35 backdrop-blur">
+    <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-bg-tertiary bg-gradient-to-b from-[#101f34] via-[#122741] to-[#0d1c33] p-3 shadow-2xl shadow-black/35 backdrop-blur">
       <div className="mb-2 flex items-center gap-2">
         <h3 className="mr-auto inline-flex items-center gap-2 text-sm font-semibold text-text-primary">
           <Sparkles className="h-4 w-4 text-cyan-300" />
@@ -202,7 +209,7 @@ export function ReportAssistantPanel({ scanId }: { scanId: string }) {
           <select
             value={activeSession?.id || ""}
             onChange={(event) => setActiveSessionId(event.target.value)}
-            className="w-full rounded-lg border border-bg-tertiary/80 bg-white/5 py-1.5 pl-7 pr-2 text-xs text-text-primary"
+            className="w-full rounded-lg border border-bg-tertiary/80 bg-bg-200/80 py-1.5 pl-7 pr-8 text-xs text-text-primary"
           >
             {sessions.map((session) => (
               <option key={session.id} value={session.id}>
@@ -211,6 +218,23 @@ export function ReportAssistantPanel({ scanId }: { scanId: string }) {
             ))}
           </select>
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (activeSession && sessions.length > 1) {
+              setSessions((prev) => prev.filter((s) => s.id !== activeSessionId));
+              setActiveSessionId(sessions.find((s) => s.id !== activeSessionId)?.id || "");
+            } else if (activeSession) {
+              setSessions([createSession()]);
+              setActiveSessionId("");
+            }
+          }}
+          className="inline-flex items-center justify-center rounded-lg bg-red-500/20 px-2 py-1.5 text-xs font-medium text-red-300 transition hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+          title="Delete current chat session"
+          disabled={!activeSession}
+        >
+          Delete
+        </button>
       </div>
 
       <div className="mb-3 flex flex-wrap gap-2">
@@ -227,7 +251,7 @@ export function ReportAssistantPanel({ scanId }: { scanId: string }) {
         ))}
       </div>
 
-      <div className="flex-1 overflow-auto px-1">
+      <div className="min-h-0 flex-1 overflow-y-auto px-1">
         <div className="space-y-2">
           {messages.map((message, index) => (
             <div
@@ -235,13 +259,21 @@ export function ReportAssistantPanel({ scanId }: { scanId: string }) {
               className="animate-[fadeIn_220ms_ease-out] pb-2"
               style={{ animationDelay: `${Math.min(index * 20, 140)}ms` }}
             >
-              <div className="w-full px-1 py-1 text-xs leading-5">
-                <div className="mb-1 flex items-center gap-2 font-semibold uppercase tracking-wide opacity-90">
-                  {message.role === "assistant" ? <Bot className="h-3.5 w-3.5 text-cyan-200" /> : <User className="h-3.5 w-3.5 text-cyan-200" />}
-                  <span className={message.role === "assistant" ? "text-cyan-100" : "text-sky-200"}>{message.role}</span>
-                  <span className="text-[10px] font-normal text-text-secondary">{new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+              <div className={`flex w-full ${message.role === "assistant" ? "justify-start" : "justify-end"}`}>
+                <div
+                  className={`w-[96%] rounded-2xl border px-2.5 py-2 text-xs leading-5 xl:w-[94%] ${
+                    message.role === "assistant"
+                      ? "border-cyan-300/20 bg-cyan-500/8"
+                      : "border-blue-300/25 bg-blue-500/12"
+                  }`}
+                >
+                  <div className="mb-1 flex items-center gap-2 font-semibold uppercase tracking-wide opacity-90">
+                    {message.role === "assistant" ? <Bot className="h-3.5 w-3.5 text-cyan-200" /> : <User className="h-3.5 w-3.5 text-sky-200" />}
+                    <span className={message.role === "assistant" ? "text-cyan-100" : "text-sky-100"}>{message.role === "assistant" ? "ASRE AI" : "You"}</span>
+                    <span className="text-[10px] font-normal text-text-secondary">{new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                  </div>
+                  <MessageContent content={message.content} isAssistant={message.role === "assistant"} />
                 </div>
-                <MessageContent content={message.content} isAssistant={message.role === "assistant"} />
               </div>
             </div>
           ))}
@@ -259,6 +291,7 @@ export function ReportAssistantPanel({ scanId }: { scanId: string }) {
               No messages yet. Start with a remediation or risk question.
             </div>
           ) : null}
+          <div ref={endRef} />
         </div>
       </div>
 
@@ -279,52 +312,66 @@ export function ReportAssistantPanel({ scanId }: { scanId: string }) {
 
 function MessageContent({ content, isAssistant }: { content: string; isAssistant: boolean }) {
   if (!isAssistant) {
-    return <div className="whitespace-pre-wrap">{content}</div>;
+    return <div className="whitespace-pre-wrap text-sky-50">{content}</div>;
   }
 
-  const lines = content
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .filter((line, index, all) => !(line.length === 0 && all[index - 1]?.length === 0));
+  const normalized = normalizeAssistantText(content);
 
   return (
-    <div className="space-y-2">
-      {lines.map((line, index) => {
-        const trimmed = line.trim();
-        if (/^\d+\./.test(trimmed)) {
-          return (
-            <div key={`line-${index}`} className="flex items-start gap-2">
-              <span className="mt-0.5 rounded bg-cyan-400/20 px-1.5 py-0.5 text-[10px] font-bold text-cyan-200">
-                {trimmed.match(/^\d+\./)?.[0].replace(".", "")}
-              </span>
-              <span className="whitespace-pre-wrap">{trimmed.replace(/^\d+\.\s*/, "")}</span>
-            </div>
-          );
-        }
-
-        if (/^[-*]\s+/.test(trimmed)) {
-          return (
-            <div key={`line-${index}`} className="flex items-start gap-2">
-              <span className="mt-1 h-1.5 w-1.5 rounded-full bg-cyan-300" />
-              <span className="whitespace-pre-wrap">{trimmed.replace(/^[-*]\s+/, "")}</span>
-            </div>
-          );
-        }
-
-        if (trimmed.endsWith(":")) {
-          return (
-            <h4 key={`line-${index}`} className="text-xs font-semibold uppercase tracking-wide text-cyan-200">
-              {trimmed.slice(0, -1)}
-            </h4>
-          );
-        }
-
-        return (
-          <p key={`line-${index}`} className="whitespace-pre-wrap text-xs leading-5 text-text-primary">
-            {line}
-          </p>
-        );
-      })}
-    </div>
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+      {normalized}
+    </ReactMarkdown>
   );
+}
+
+const markdownComponents: Components = {
+  h1: ({ children }) => <h1 className="mb-2 mt-3 text-base font-semibold text-cyan-100 first:mt-0">{children}</h1>,
+  h2: ({ children }) => <h2 className="mb-2 mt-3 text-sm font-semibold text-cyan-100 first:mt-0">{children}</h2>,
+  h3: ({ children }) => <h3 className="mb-1 mt-2 text-xs font-semibold uppercase tracking-wide text-cyan-200 first:mt-0">{children}</h3>,
+  p: ({ children }) => <p className="mb-2 whitespace-pre-wrap text-xs leading-5 text-text-primary last:mb-0">{children}</p>,
+  ul: ({ children }) => <ul className="mb-2 list-disc space-y-1 pl-5 text-xs text-text-primary">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-2 list-decimal space-y-1 pl-5 text-xs text-text-primary">{children}</ol>,
+  li: ({ children }) => <li className="leading-5">{children}</li>,
+  blockquote: ({ children }) => <blockquote className="mb-2 border-l-2 border-cyan-300/50 bg-cyan-500/8 px-3 py-2 text-xs italic text-cyan-50">{children}</blockquote>,
+  hr: () => <hr className="my-2 border-bg-tertiary/70" />,
+  code: ({ children, className }) => {
+    if (className && className.includes("language-")) {
+      return <code className="block overflow-x-auto rounded-lg border border-bg-tertiary/80 bg-black/35 p-2 font-mono text-[11px] text-cyan-50">{children}</code>;
+    }
+    return <code className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[11px] text-cyan-100">{children}</code>;
+  },
+  pre: ({ children }) => <pre className="mb-2 overflow-x-auto">{children}</pre>,
+  strong: ({ children }) => <strong className="font-semibold text-cyan-100">{children}</strong>,
+  em: ({ children }) => <em className="text-cyan-50">{children}</em>,
+  a: ({ children, href }) => (
+    <a className="text-cyan-200 underline decoration-cyan-300/60 underline-offset-2" href={href} rel="noreferrer" target="_blank">
+      {children}
+    </a>
+  ),
+};
+
+function normalizeAssistantText(raw: string): string {
+  let text = String(raw || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/\u2022/g, "- ")
+    .replace(/\u25CF/g, "- ")
+    .replace(/\u00A0/g, " ")
+    .trim();
+
+  if (!text) {
+    return "No response generated.";
+  }
+
+  text = text
+    .replace(/^\s*(\d+)[\)\-]\s+/gm, "$1. ")
+    .replace(/^\s*\*\*([^*\n]{2,90})\*\*\s*:?\s*$/gm, "## $1")
+    .replace(/^\s*([A-Za-z][A-Za-z0-9 /()_\-]{1,50}):\s+(.+)$/gm, "**$1:** $2")
+    .replace(/\n{3,}/g, "\n\n");
+
+  const fenceCount = (text.match(/```/g) || []).length;
+  if (fenceCount % 2 !== 0) {
+    text = `${text}\n\n\`\`\``;
+  }
+
+  return text;
 }

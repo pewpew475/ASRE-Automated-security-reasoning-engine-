@@ -6,10 +6,12 @@ from api.routes.websocket import publish_scan_event
 from config import settings
 from scanner.crawler import EndpointData
 # Lazy import to avoid circular dependency
+from scanner.hardcore.advanced_exploitation import AdvancedExploitationModule
 from scanner.hardcore.jwt_attacker import JWTAttacker
 from scanner.hardcore.nuclei_runner import NucleiRunner
 from scanner.hardcore.rate_limit_tester import RateLimitTester
 from scanner.hardcore.session_tester import SessionTester
+from scanner.hardcore.source_code_extractor import SourceCodeExtractor
 from scanner.hardcore.sqlmap_client import SQLMapClient
 from scanner.hardcore.user_enumerator import UserEnumerator
 from scanner.rule_engine import FindingData
@@ -56,6 +58,28 @@ class HardcoreRunner:
             getattr(self.consent_scope, "id", "unknown"),
         )
 
+        target_url = str(getattr(self.consent_scope, "target_domain", ""))
+
+        # Source code and secrets extraction
+        source_findings = await self._run_module(
+            SourceCodeExtractor(
+                scan_id=self.scan_id,
+                target_url=target_url,
+                cookies=self.cookies,
+            ).run(),
+            module_name="SourceCodeExtractor",
+        )
+
+        # Advanced exploitation techniques
+        advanced_findings = await self._run_module(
+            AdvancedExploitationModule(
+                scan_id=self.scan_id,
+                endpoints=self.endpoints,
+                cookies=self.cookies,
+            ).run(),
+            module_name="AdvancedExploitation",
+        )
+
         sqli_findings = await self._run_module(
             SQLMapClient(
                 scan_id=self.scan_id,
@@ -68,7 +92,7 @@ class HardcoreRunner:
         cve_findings = await self._run_module(
             NucleiRunner(
                 scan_id=self.scan_id,
-                target_url=str(getattr(self.consent_scope, "target_domain", "")),
+                target_url=target_url,
                 cookies=self.cookies,
             ).run(),
             module_name="Nuclei",
@@ -110,6 +134,8 @@ class HardcoreRunner:
         )
 
         all_findings: List[FindingData] = []
+        all_findings.extend(source_findings)
+        all_findings.extend(advanced_findings)
         all_findings.extend(sqli_findings)
         all_findings.extend(cve_findings)
         for item in results:
@@ -124,7 +150,16 @@ class HardcoreRunner:
             "hardcore.complete",
             {
                 "total_hardcore_findings": len(all_findings),
-                "modules_run": ["sqlmap", "nuclei", "rate_limit", "user_enum", "jwt", "session"],
+                "modules_run": [
+                    "source_code_extractor",
+                    "advanced_exploitation",
+                    "sqlmap",
+                    "nuclei",
+                    "rate_limit",
+                    "user_enum",
+                    "jwt",
+                    "session",
+                ],
             },
         )
 

@@ -106,9 +106,10 @@ async def start_scan(
     current_user: CurrentUser,
     db: DBSession,
 ) -> ScanCreateResponse:
+    consent_record = None
     if payload.mode == "hardcore":
         try:
-            await ScanService.verify_hardcore_eligibility(
+            consent_record = await ScanService.verify_hardcore_eligibility(
                 user_id=current_user.id,
                 target_url=payload.target_url,
                 db=db,
@@ -139,6 +140,11 @@ async def start_scan(
         db.add(new_scan)
         await db.flush()
         scan_id = new_scan.id
+
+        if payload.mode == "hardcore" and consent_record is not None:
+            consent_record.scan_id = scan_id
+            db.add(consent_record)
+
         # Commit before enqueue to ensure worker can always read the scan row.
         await db.commit()
 

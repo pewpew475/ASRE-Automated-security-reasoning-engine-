@@ -56,6 +56,9 @@ class ConnectionManager:
 
     async def send_to_one(self, websocket: WebSocket, event: dict) -> None:
         try:
+            # Check if connection is still open before sending
+            if websocket.client_state != WebSocketState.CONNECTED:
+                return
             await websocket.send_json(event)
         except Exception:
             logger.warning("WS send_to_one failed", exc_info=True)

@@ -2,8 +2,8 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from some_database_module import get_db_context  # Replace with actual import
-from some_models_module import AuditLog  # Replace with actual import
+from core.database import get_db_context
+from models.audit_log import AuditLog
 
 
 async def log_audit_entry(

@@ -9,30 +9,32 @@
     "preview": "vite preview --port 3000"
   },
   "dependencies": {
+    "@types/dagre": "^0.7.54",
+    "@types/react-syntax-highlighter": "^15.5.13",
+    "@xyflow/react": "^12.3.0",
+    "axios": "^1.7.7",
+    "clsx": "^2.1.1",
+    "dagre": "^0.8.5",
+    "date-fns": "^3.6.0",
+    "lucide-react": "^0.447.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.0",
-    "zustand": "^4.5.4",
-    "axios": "^1.7.7",
-    "@xyflow/react": "^12.3.0",
-    "dagre": "^0.8.5",
-    "@types/dagre": "^0.7.54",
-    "clsx": "^2.1.1",
-    "tailwind-merge": "^2.5.2",
-    "lucide-react": "^0.447.0",
-    "date-fns": "^3.6.0",
     "react-hot-toast": "^2.4.1",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^6.26.0",
     "react-syntax-highlighter": "^15.5.0",
-    "@types/react-syntax-highlighter": "^15.5.13"
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^2.5.2",
+    "zustand": "^4.5.4"
   },
   "devDependencies": {
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
-    "typescript": "^5.5.3",
-    "vite": "^5.4.8",
-    "tailwindcss": "^3.4.13",
     "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.47"
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.5.3",
+    "vite": "^5.4.8"
   }
 }

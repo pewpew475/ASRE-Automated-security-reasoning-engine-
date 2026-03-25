@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from api.deps import get_current_user
 from core.llm_registry import LLMRegistry
@@ -262,20 +263,34 @@ async def ask_report_assistant(
     payload: ReportAssistantRequest,
     current_user=Depends(get_current_user),
 ) -> dict:
-    scan = await _verify_scan_ownership(scan_id=scan_id, current_user=current_user)
+    try:
+        scan = await _verify_scan_ownership(scan_id=scan_id, current_user=current_user)
 
-    if not payload.question.strip():
-        raise HTTPException(status_code=400, detail="Question is required")
+        if not payload.question.strip():
+            raise HTTPException(status_code=400, detail="Question is required")
 
-    async with get_db_context() as db:
-        report = (
-            await db.execute(select(Report).where(Report.scan_id == UUID(scan_id)))
-        ).scalar_one_or_none()
-        findings = (
-            await db.execute(select(Finding).where(Finding.scan_id == UUID(scan_id)).order_by(Finding.detected_at.desc()))
-        ).scalars().all()
+        async with get_db_context() as db:
+            report = (
+                await db.execute(select(Report).where(Report.scan_id == UUID(scan_id)))
+            ).scalar_one_or_none()
+            findings = (
+                await db.execute(
+                    select(Finding)
+                    .options(selectinload(Finding.endpoint))
+                    .where(Finding.scan_id == UUID(scan_id))
+                    .order_by(Finding.detected_at.desc())
+                )
+            ).scalars().all()
 
-    chains = await ChainBuilder.get_ranked_chains(scan_id=scan_id)
+        chains = await ChainBuilder.get_ranked_chains(scan_id=scan_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to prepare assistant context for scan=%s", scan_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to build report assistant context. Please check backend logs.",
+        ) from exc
 
     if not findings and not report and not chains:
         return {
@@ -335,7 +350,10 @@ async def ask_report_assistant(
         answer = _truncate(str(getattr(response, "content", "")).strip(), 12000)
     except Exception as exc:
         logger.exception("Report assistant failed for scan=%s", scan_id)
-        raise HTTPException(status_code=500, detail=f"Assistant failed: {exc}") from exc
+        raise HTTPException(
+            status_code=503,
+            detail="LLM service unavailable. Please check backend logs.",
+        ) from exc
 
     return {
         "answer": answer or "I could not generate an answer from the report context.",

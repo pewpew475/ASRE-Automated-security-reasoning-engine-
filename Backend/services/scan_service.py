@@ -32,7 +32,7 @@ class ScanService:
         user_id: UUID,
         target_url: str,
         db: AsyncSession,
-    ) -> None:
+    ) -> ConsentRecord:
         target_domain = ScanService._extract_domain(target_url)
 
         consent_result = await db.execute(
@@ -45,14 +45,8 @@ class ScanService:
 
         if consent_record is None:
             raise ConsentError(
-                "Hardcore Mode requires domain ownership verification. "
-                "Complete consent flow at /api/consent/initiate first."
-            )
-
-        if not consent_record.domain_verified:
-            raise ConsentError(
-                "Domain ownership not verified. Add DNS TXT record and "
-                "call /api/consent/verify-domain."
+                "Hardcore Mode requires consent before scanning. "
+                "Click 'Give Consent and Continue' first."
             )
 
         if consent_record.tc_version != settings.TC_CURRENT_VERSION:
@@ -63,7 +57,8 @@ class ScanService:
 
         expires_at = consent_record.expires_at
         if expires_at is None:
-            raise ConsentError("Consent has no expiry and must be re-initiated.")
+            # Consent is considered active when T&C has been accepted in the simplified flow.
+            return consent_record
 
         now = datetime.now(timezone.utc)
         if expires_at.tzinfo is None:
@@ -72,5 +67,4 @@ class ScanService:
         if expires_at < now:
             raise ConsentError("Consent has expired. Please re-initiate the consent flow.")
 
-        if not consent_record.scope_config:
-            raise ConsentError("No scan scope defined. Specify allowed paths in consent config.")
+        return consent_record

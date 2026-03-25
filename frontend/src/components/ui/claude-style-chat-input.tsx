@@ -138,7 +138,7 @@ export default function ClaudeStyleChatInput({
   };
 
   return (
-    <div className="w-full rounded-2xl border border-bg-tertiary/80 bg-white/5 p-3 shadow-lg shadow-black/20 transition focus-within:shadow-lg focus-within:shadow-black/30">
+    <div className="w-full rounded-2xl border border-bg-tertiary/80 bg-white/10 p-3 shadow-lg shadow-black/20 transition focus-within:shadow-lg focus-within:shadow-black/30">
       <div className="relative mb-2">
         <textarea
           ref={textareaRef}

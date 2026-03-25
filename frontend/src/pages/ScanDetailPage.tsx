@@ -156,7 +156,7 @@ export function ScanDetailPage() {
             <div className="min-w-0 flex-1">
               <FindingsList scanId={scanId} />
             </div>
-            <section className="min-h-[calc(100vh-12rem)] w-full overflow-auto xl:min-w-[360px] xl:max-w-[820px] xl:resize-x xl:w-[460px]">
+            <section className="h-[calc(100vh-12rem)] min-h-[calc(100vh-12rem)] w-full overflow-hidden xl:min-w-[360px] xl:max-w-[820px] xl:resize-x xl:w-[460px]">
               <ReportAssistantPanel scanId={scanId} />
             </section>
           </div>

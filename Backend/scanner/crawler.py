@@ -340,12 +340,35 @@ class Crawler:
                 form_endpoints = self._extract_forms(soup, str(response.url))
                 self.discovered.extend(form_endpoints)
 
+                # Check if this is a JavaScript framework site
                 if self._should_use_playwright(response.text):
+                    # Extract API endpoints from JS code first
+                    js_endpoints = self._extract_api_endpoints_from_js(response.text, str(response.url))
+                    for js_endpoint in js_endpoints:
+                        endpoint_url = urljoin(str(response.url), js_endpoint) if js_endpoint.startswith('/') else js_endpoint
+                        normalized = self._normalize_url(endpoint_url)
+                        api_endpoint = EndpointData(
+                            url=normalized,
+                            method="GET",
+                            params=self._extract_query_params(normalized),
+                            body_params=[],
+                            headers={},
+                            source="javascript",
+                        )
+                        self.discovered.append(api_endpoint)
+                        new_urls.append(normalized)
+
+                    # Use Playwright to render and capture real network requests
                     playwright_endpoints = await self._use_playwright_for_page(str(response.url))
                     for intercepted in playwright_endpoints:
+                        # Only add GET requests as crawlable URLs
                         if intercepted.method == "GET" and intercepted.url:
                             new_urls.append(intercepted.url)
                     self.discovered.extend(playwright_endpoints)
+                    
+                    # Also try common SPA routes
+                    spa_routes = self._generate_spa_routes(str(response.url))
+                    new_urls.extend(spa_routes)
             elif "application/json" in content_type:
                 api_endpoint = EndpointData(
                     url=url,
@@ -564,9 +587,39 @@ class Crawler:
                     )
 
                 page.on("request", on_request)
-                await page.goto(url, wait_until="networkidle", timeout=10000)
+                
+                # Increased timeout for slow-loading React apps
+                # Try with networkidle first, fall back to load_state
+                try:
+                    await page.goto(url, wait_until="networkidle", timeout=15000)
+                except Exception:
+                    self.logger.debug("networkidle timeout for %s, trying domcontentloaded", url)
+                    try:
+                        await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                    except Exception:
+                        self.logger.debug("domcontentloaded timeout for %s", url)
+
+                # Allow additional time for lazy-loaded content
+                await asyncio.sleep(2)
 
                 html = await page.content()
+                
+                # Extract more endpoints from the rendered JS
+                js_endpoints = self._extract_api_endpoints_from_js(html, url)
+                for js_endpoint in js_endpoints:
+                    endpoint_url = urljoin(url, js_endpoint) if js_endpoint.startswith('/') else js_endpoint
+                    normalized = self._normalize_url(endpoint_url)
+                    collected.append(
+                        EndpointData(
+                            url=normalized,
+                            method="GET",
+                            params=self._extract_query_params(normalized),
+                            body_params=[],
+                            headers={},
+                            source="javascript_rendered",
+                        )
+                    )
+                
                 soup = BeautifulSoup(html, "lxml")
                 links = self._extract_links(soup, url)
                 forms = self._extract_forms(soup, url)
@@ -585,6 +638,12 @@ class Crawler:
 
                 collected.extend(forms)
                 await browser.close()
+                
+                self.logger.info(
+                    "Playwright crawl for %s found %d endpoints (intercepted + extracted)",
+                    url,
+                    len(collected)
+                )
         except Exception as exc:
             self.logger.warning("Playwright page crawl failed for %s: %s", url, exc)
 
@@ -609,6 +668,10 @@ class Crawler:
             "window.__reactFiber",
             "ng-app",
             "v-app",
+            "window.__NUXT__",
+            "__svelte",
+            "__remixContext",
+            "window.Ember",
         ]
 
         if any(signature in body for signature in signatures):
@@ -622,6 +685,74 @@ class Crawler:
             pass
 
         return False
+
+    def _extract_api_endpoints_from_js(self, html: str, base_url: str) -> List[str]:
+        """Extract potential API endpoints from JavaScript strings and patterns."""
+        endpoints: Set[str] = set()
+        
+        # Common API endpoint patterns in JS
+        patterns = [
+            r'["\']/api/[a-zA-Z0-9_\-/]*["\']',  # /api/users, /api/v1/products
+            r'["\']/rest/[a-zA-Z0-9_\-/]*["\']',  # /rest/...
+            r'["\']/v\d+/[a-zA-Z0-9_\-/]*["\']',  # /v1/users, /v2/data
+            r'["\']/graphql["\']',                  # /graphql
+            r'["\']/ajax/[a-zA-Z0-9_\-/]*["\']',   # /ajax/...
+            r'["\']/endpoint/[a-zA-Z0-9_\-/]*["\']', # /endpoint/...
+            r'["\']/services/[a-zA-Z0-9_\-/]*["\']', # /services/...
+            r'["\']https?://[^"\']+?/api/[a-zA-Z0-9_\-/]*["\']',  # full URLs
+            r'[\s(]fetch\(["\']([^"\']+?)["\'][\s,\)]',  # fetch() calls
+            r'axios\.(get|post|put|delete|patch)\(["\']([^"\']+?)["\']',  # axios calls
+            r'\.get\(["\']([^"\']+?)["\']',  # jQuery .get() calls
+            r'\.post\(["\']([^"\']+?)["\']',  # jQuery .post() calls
+            r'url:\s*["\']([^"\']+?)["\']',   # url: property in AJAX
+            r'endpoint:\s*["\']([^"\']+?)["\']', # endpoint: property
+        ]
+
+        try:
+            for pattern in patterns:
+                matches = re.findall(pattern, html, re.IGNORECASE)
+                for match in matches:
+                    # Handle regex groups - take the captured group if exists, else take whole match
+                    url = match[0] if isinstance(match, tuple) and match else match
+                    if isinstance(url, str):
+                        url = url.strip('\'"')
+                        
+                        # Skip obvious false positives
+                        if any(skip in url.lower() for skip in ['.css', '.js', '.png', '.jpg', '.svg', '.woff', 'cdn', 'google', 'facebook']):
+                            continue
+                            
+                        # Resolve relative URLs
+                        if url.startswith('/'):
+                            endpoints.add(url)
+                        elif url.startswith('http'):
+                            parsed = urlparse(url)
+                            if self._is_same_domain(url):
+                                endpoints.add(parsed.path + ('?' + parsed.query if parsed.query else ''))
+        except Exception as exc:
+            self.logger.debug("Error extracting API endpoints from JS: %s", exc)
+
+        return list(endpoints)
+
+    def _generate_spa_routes(self, base_url: str) -> List[str]:
+        """Generate common SPA routes to test."""
+        routes: Set[str] = set()
+        parsed = urlparse(base_url)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        
+        # Common SPA route patterns
+        common_routes = [
+            "/dashboard", "/admin", "/settings", "/profile", "/user",
+            "/products", "/items", "/list", "/data", "/users", "/accounts",
+            "/home", "/main", "/explore", "/search", "/about", "/contact",
+            "/login", "/signup", "/register", "/account", "/api", "/api/v1",
+            "/api/v2", "/graphql", "/users/:id", "/products/:id", "/items/:id",
+        ]
+        
+        for route in common_routes:
+            if ':' not in route:  # Skip parameterized routes for now
+                routes.add(urljoin(base, route))
+        
+        return list(routes)
 
     def _normalize_url(self, url: str) -> str:
         parsed = urlparse(url)

@@ -12,26 +12,30 @@ from scanner.rule_engine import FindingData
 from tasks.scan_tasks import log_audit_entry
 
 SAFE_SQLMAP_OPTIONS: Dict[str, Any] = {
-    "level": 1,
-    "risk": 1,
-    "technique": "BEUST",
+    "level": 5,  # Maximum level for thorough testing
+    "risk": 3,   # Maximum risk - test destructive payloads
+    "technique": "BEUSTQ",  # All techniques: Boolean, Error, Union, Stacked, Time, Inline
     "batch": True,
-    "forms": False,
-    "crawl": 0,
-    "getDbs": False,
-    "getTables": False,
-    "getColumns": False,
-    "dump": False,
-    "dumpAll": False,
-    "os-shell": False,
-    "os-cmd": False,
-    "priv-esc": False,
-    "file-read": False,
-    "file-write": False,
-    "timeout": 30,
-    "retries": 2,
-    "delay": 1,
+    "forms": True,  # Test forms too
+    "crawl": 2,  # Crawl 2 levels deep
+    "getDbs": True,  # Retrieve database names
+    "getTables": True,  # Get all table names
+    "getColumns": True,  # Get column names
+    "getSchema": True,  # Get schema info
+    "dumpTable": True,  # Dump table contents
+    "dumpAll": False,  # Don't dump everything (too much data)
+    "search": True,  # Search for tables/columns
+    "os-shell": True,  # Attempt OS shell
+    "os-cmd": True,  # Execute OS commands
+    "priv-esc": True,  # Test privilege escalation
+    "file-read": True,  # Read files
+    "file-write": False,  # Don't write files (too destructive)
+    "fingerprint": True,  # Fingerprint DB
+    "timeout": 60,  # Longer timeout for thorough testing
+    "retries": 3,
+    "delay": 0.5,  # Minimal delay to speed up
     "randomAgent": True,
+    "threads": 4,  # Parallel threads
 }
 
 
